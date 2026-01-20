@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
-  <title>Red Bull Finder - v14 Stable</title>
+  <title>Red Bull Finder - v15 Hybrid</title>
   
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.css" />
   <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.js"></script>
@@ -90,10 +90,16 @@
     var appSupabase = null;
     var selectedStoreCoords = null; 
     var statusEl = document.getElementById('status-pill');
-    
-    // Using Generic Terms covers more ground than specific brands
-    var SEARCH_TERMS = ["convenience store", "gas station", "supermarket", "grocery"];
+    var seenStoreIds = new Set(); // Prevents duplicates
     var storesFoundCount = 0;
+
+    // HYBRID SEARCH LIST: Brands AND Categories
+    var SEARCH_TERMS = [
+        // 1. Specific Chains (To force them to appear)
+        "7-Eleven", "QuikTrip", "CVS", "Walmart", "Walgreens", "Target", "Hy-Vee", "Casey's", "Shell", "BP", "Circle K", "Costco",
+        // 2. Generic Categories (To catch the local holes)
+        "gas station", "convenience shop", "supermarket", "grocery"
+    ];
 
     var DB_URL = 'https://vwyvlyawbwfzwfyjojsc.supabase.co';
     var DB_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InZ3eXZseWF3YndmendmeWpvanNjIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Njg4NzI4MTIsImV4cCI6MjA4NDQ0ODgxMn0.I74HObejsbKGW3uy59iAw0W2crVMxuscuQOYSTdbbBA';
@@ -139,24 +145,27 @@
         } catch(e) { console.error(e); alert("Search failed."); }
     }
 
-    // --- STABLE PHOTON SCANNER ---
+    // --- HYBRID SCANNER ---
     async function scanArea(lat, lng) {
-        setStatus("Scanning area...");
+        setStatus("Scanning...");
         storesFoundCount = 0;
+        seenStoreIds.clear(); // Reset duplicates
 
-        // Run all searches in parallel
-        await Promise.all(SEARCH_TERMS.map(term => fetchPhoton(term, lat, lng)));
+        // Run searches in batches to be nice to the server
+        for (let term of SEARCH_TERMS) {
+            await fetchPhoton(term, lat, lng);
+        }
 
         if(storesFoundCount === 0) {
             setStatus("No stores found.");
         } else {
-            setStatus("Found " + storesFoundCount + " stores.");
+            setStatus("Done! Found " + storesFoundCount + " stores.");
         }
     }
 
     async function fetchPhoton(term, lat, lng) {
-        // Photon is fast and doesn't limit requests like Overpass
-        var url = `https://photon.komoot.io/api/?q=${encodeURIComponent(term)}&lat=${lat}&lon=${lng}&limit=30`;
+        // limit=15 per term ensures we get a mix of everything
+        var url = `https://photon.komoot.io/api/?q=${encodeURIComponent(term)}&lat=${lat}&lon=${lng}&limit=15`;
 
         try {
             var response = await fetch(url);
@@ -167,10 +176,12 @@
                     var coords = feature.geometry.coordinates;
                     var sLat = coords[1];
                     var sLng = coords[0];
-                    var sName = feature.properties.name || "Store";
+                    var sName = feature.properties.name || term;
                     
-                    // Filter out bad results (optional)
-                    if(!sName) return;
+                    // DEDUPING LOGIC: Use OSM ID to prevent double pins
+                    var storeId = feature.properties.osm_id;
+                    if (seenStoreIds.has(storeId)) return; // Skip if already drawn
+                    seenStoreIds.add(storeId);
 
                     storesFoundCount++;
                     
@@ -192,7 +203,7 @@
                 });
             }
         } catch (err) {
-            console.error("Photon Error:", err);
+            console.error("Photon Error (" + term + "):", err);
         }
     }
 
@@ -207,6 +218,7 @@
         if (data) {
             data.forEach(function(r) {
                 var color = r.status === 'In Stock' ? '#28a745' : (r.status === 'Low' ? 'orange' : '#d7003a');
+                // Larger Colored Pin for Verified Reports
                 L.circleMarker([r.lat, r.lng], {
                     color: 'white', fillColor: color, fillOpacity: 1, radius: 9, weight: 2
                 }).addTo(appMap).bindPopup(`<b>${r.store_name}</b><br>${r.flavor}<br><b>${r.status}</b>`);

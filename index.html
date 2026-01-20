@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
-  <title>Red Bull Finder - v6</title>
+  <title>Red Bull Finder - v7 Wide Net</title>
   
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.css" />
   <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.js"></script>
@@ -16,7 +16,15 @@
     /* Map */
     #map { height: 100%; width: 100%; background-color: #333; z-index: 1; }
 
-    /* WELCOME SCREEN (Forces user interaction) */
+    /* STATUS BAR (New!) */
+    #status-bar {
+        position: fixed; bottom: 0; left: 0; width: 100%;
+        background: rgba(0,0,0,0.8); color: white;
+        padding: 5px 10px; font-size: 12px; z-index: 9000;
+        text-align: center; font-family: monospace;
+    }
+
+    /* WELCOME SCREEN */
     #welcome-screen {
         position: fixed; top: 0; left: 0; width: 100%; height: 100%;
         background: #1f305e; /* Red Bull Blue */
@@ -27,19 +35,18 @@
     }
     #welcome-screen h1 { margin-bottom: 20px; font-style: italic; }
     .start-btn {
-        background: #d7003a; /* Red Bull Red */
-        color: white; border: none; padding: 20px 40px;
+        background: #d7003a; color: white; border: none; padding: 20px 40px;
         font-size: 20px; font-weight: bold; border-radius: 50px;
         cursor: pointer; box-shadow: 0 4px 15px rgba(0,0,0,0.4);
     }
 
     /* Floating Report Button */
     .report-btn {
-      position: absolute; bottom: 30px; right: 20px; z-index: 2000;
+      position: absolute; bottom: 40px; right: 20px; z-index: 2000;
       background-color: #d7003a; color: white; border: none;
       padding: 15px 25px; border-radius: 50px; font-size: 16px;
       font-weight: bold; box-shadow: 0 4px 6px rgba(0,0,0,0.3);
-      cursor: pointer; display: none; /* Hidden until started */
+      cursor: pointer; display: none;
     }
 
     /* Modal */
@@ -51,6 +58,8 @@
   </style>
 </head>
 <body>
+
+  <div id="status-bar">Waiting for user...</div>
 
   <div id="welcome-screen">
       <h1>Red Bull Finder</h1>
@@ -79,85 +88,101 @@
   </div>
 
   <script>
-    // --- VARIABLES ---
     var appMap = null;
     var appSupabase = null;
     var userPos = null;
     var selectedStoreCoords = null; 
+    var statusEl = document.getElementById('status-bar');
 
     var DB_URL = 'https://vwyvlyawbwfzwfyjojsc.supabase.co';
     var DB_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InZ3eXZseWF3YndmendmeWpvanNjIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Njg4NzI4MTIsImV4cCI6MjA4NDQ0ODgxMn0.I74HObejsbKGW3uy59iAw0W2crVMxuscuQOYSTdbbBA';
 
-    // --- STARTUP ---
     window.onload = function() {
-        // Init Supabase & Map immediately (but don't locate yet)
         appSupabase = window.supabase.createClient(DB_URL, DB_KEY);
         loadFlavors();
-
-        appMap = L.map('map').setView([39.82, -98.57], 4);
+        
+        // Initialize map but wait for startApp() to locate
+        appMap = L.map('map').setView([39.0, -94.5], 10); // Default to generic view
         L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png', {
             maxZoom: 19, attribution: '© OSM'
         }).addTo(appMap);
     };
 
-    // --- TRIGGERED BY BUTTON CLICK (Fixes Permission Issue) ---
     window.startApp = function() {
-        // Hide Welcome Screen
         document.getElementById('welcome-screen').style.display = 'none';
         document.getElementById('mainReportBtn').style.display = 'block';
-
-        // NOW ask for location
-        appMap.locate({setView: true, maxZoom: 14});
+        statusEl.innerText = "Requesting Location...";
+        appMap.locate({setView: true, maxZoom: 13}); // Zoom level 13 is better for wide search
     };
 
-    // Location Events
-    // Note: We attach these *after* the map exists
     setTimeout(() => {
         if(appMap) {
             appMap.on('locationfound', function(e) {
                 userPos = e.latlng;
+                statusEl.innerText = "Location Found. Scanning for stores...";
                 L.marker(e.latlng).addTo(appMap).bindPopup("You are here").openPopup();
+                
+                // Fetch Stores
                 fetchOSMStores(e.latitude, e.longitude);
                 fetchSupabaseReports();
             });
 
             appMap.on('locationerror', function(e) {
-                alert("Location Access Denied.\n\n1. Check your browser settings.\n2. Ensure your GPS is on.\n3. Reload the page.");
-                // Show US view if denied
-                appMap.setView([39.82, -98.57], 4);
+                statusEl.innerText = "Error: Location Denied.";
+                alert("Location Access Denied. Please enable it in browser settings.");
             });
         }
     }, 1000);
 
-    // --- DATA LOADING ---
-    async function loadFlavors() {
-        const { data } = await appSupabase.from('flavors').select('*').eq('is_active', true).order('name');
-        var selectBox = document.getElementById('flavor');
-        selectBox.innerHTML = "";
-        if (data) {
-            data.forEach(f => {
-                var option = document.createElement("option");
-                option.value = f.name; option.text = f.name;
-                selectBox.appendChild(option);
-            });
-        }
-    }
-
+    // --- NEW: WIDER SEARCH & BETTER QUERY ---
     async function fetchOSMStores(lat, lng) {
-        var query = `[out:json][timeout:25];(node["name"~"7-Eleven|CVS|Walmart|QuikTrip|Walgreens|Target|Costco|Casey's"](around:5000, ${lat}, ${lng}););out body;`;
+        statusEl.innerText = "Querying OpenStreetMap (10km radius)...";
+        
+        // nwr = Node, Way, Relation (Finds buildings too!)
+        // Added: Hy-Vee, Casey's, Dollar General
+        var query = `
+            [out:json][timeout:25];
+            (
+              nwr["name"~"7-Eleven|CVS|Walmart|QuikTrip|Walgreens|Target|Costco|Casey's|Hy-Vee|Dollar General", i]
+              (around:10000, ${lat}, ${lng});
+            );
+            out center;
+        `;
+        
         var url = "https://overpass-api.de/api/interpreter?data=" + encodeURIComponent(query);
+
         try {
             var response = await fetch(url);
             var data = await response.json();
-            if(data.elements) {
+            
+            if(data.elements && data.elements.length > 0) {
+                statusEl.innerText = "Found " + data.elements.length + " stores nearby.";
+                
                 data.elements.forEach(store => {
-                    var marker = L.circleMarker([store.lat, store.lon], {
-                        color: '#888', fillColor: '#ccc', fillOpacity: 0.5, radius: 6, weight: 1
+                    // "center" is used for buildings (Ways), "lat/lon" for Points (Nodes)
+                    var sLat = store.lat || store.center.lat;
+                    var sLng = store.lon || store.center.lon;
+                    var sName = store.tags.name || "Store";
+
+                    var marker = L.circleMarker([sLat, sLng], {
+                        color: '#666', fillColor: '#bbb', fillOpacity: 0.5, radius: 6, weight: 1
                     }).addTo(appMap);
-                    marker.bindPopup(`<b>${store.tags.name || "Store"}</b><br><button onclick="reportFromPin('${store.tags.name.replace(/'/g, "\\'")}', ${store.lat}, ${store.lon})">Report Stock Here</button>`);
+
+                    marker.bindPopup(`
+                        <b>${sName}</b><br>
+                        <button onclick="reportFromPin('${sName.replace(/'/g, "\\'")}', ${sLat}, ${sLng})">
+                            Report Stock Here
+                        </button>
+                    `);
                 });
+            } else {
+                statusEl.innerText = "No stores found. Try moving the map?";
+                alert("No stores found within 10km. Try checking your area manually.");
             }
-        } catch (err) { console.error("OSM Error:", err); }
+        } catch (err) {
+            statusEl.innerText = "Error fetching stores: " + err.message;
+            console.error("OSM Error:", err);
+        }
     }
 
     async function fetchSupabaseReports() {
@@ -168,6 +193,19 @@
                 L.circleMarker([r.lat, r.lng], {
                     color: color, fillColor: color, fillOpacity: 0.9, radius: 8, weight: 2
                 }).addTo(appMap).bindPopup(`<b>${r.store_name}</b><br>${r.flavor}<br><b>${r.status}</b>`);
+            });
+        }
+    }
+
+    async function loadFlavors() {
+        const { data } = await appSupabase.from('flavors').select('*').eq('is_active', true).order('name');
+        var selectBox = document.getElementById('flavor');
+        selectBox.innerHTML = "";
+        if (data) {
+            data.forEach(f => {
+                var option = document.createElement("option");
+                option.value = f.name; option.text = f.name;
+                selectBox.appendChild(option);
             });
         }
     }

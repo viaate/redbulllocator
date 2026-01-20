@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
-  <title>Red Bull Finder - v15 Hybrid</title>
+  <title>Red Bull Finder - Final</title>
   
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.css" />
   <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.js"></script>
@@ -37,15 +37,6 @@
       z-index: 1999; display: none; white-space: nowrap;
     }
 
-    /* ACTION BUTTON */
-    .fab-btn {
-      position: absolute; bottom: 30px; right: 20px; z-index: 2000;
-      background-color: #d7003a; color: white; border: none;
-      width: 60px; height: 60px; border-radius: 50%; font-size: 30px;
-      box-shadow: 0 4px 10px rgba(0,0,0,0.4); cursor: pointer;
-      display: flex; align-items: center; justify-content: center;
-    }
-
     /* MODAL */
     .modal { display: none; position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); width: 90%; max-width: 350px; background: white; padding: 25px; border-radius: 16px; z-index: 3000; box-shadow: 0 20px 50px rgba(0,0,0,0.5); }
     .modal h3 { margin-top: 0; color: #1f305e; font-size: 22px; }
@@ -66,12 +57,12 @@
 
   <div id="status-pill">Ready</div>
   <div id="map"></div>
-  <button class="fab-btn" onclick="openReportModal()" title="Add Report">+</button>
+  
   <div class="overlay" id="overlay" onclick="closeModal()"></div>
 
   <div class="modal" id="reportModal">
     <h3>Report Stock</h3>
-    <div class="form-group"><label>Store Name</label><input type="text" id="storeName" placeholder="Where are you?" /></div>
+    <div class="form-group"><label>Store Name</label><input type="text" id="storeName" readonly style="background:#eee; color:#555;" /></div>
     <div class="form-group"><label>Flavor</label><select id="flavor"><option>Loading...</option></select></div>
     <div class="form-group">
       <label>Status</label>
@@ -90,14 +81,12 @@
     var appSupabase = null;
     var selectedStoreCoords = null; 
     var statusEl = document.getElementById('status-pill');
-    var seenStoreIds = new Set(); // Prevents duplicates
+    var seenStoreIds = new Set();
     var storesFoundCount = 0;
 
-    // HYBRID SEARCH LIST: Brands AND Categories
+    // HYBRID SEARCH LIST
     var SEARCH_TERMS = [
-        // 1. Specific Chains (To force them to appear)
         "7-Eleven", "QuikTrip", "CVS", "Walmart", "Walgreens", "Target", "Hy-Vee", "Casey's", "Shell", "BP", "Circle K", "Costco",
-        // 2. Generic Categories (To catch the local holes)
         "gas station", "convenience shop", "supermarket", "grocery"
     ];
 
@@ -113,7 +102,6 @@
         L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png', { maxZoom: 19 }).addTo(appMap);
         L.control.zoom({ position: 'bottomleft' }).addTo(appMap);
 
-        // Initial Scan
         scanArea(39.05, -94.60);
         fetchSupabaseReports();
     };
@@ -134,37 +122,28 @@
                 var lon = parseFloat(data[0].lon);
 
                 appMap.flyTo([lat, lon], 14, { duration: 1.5 });
-                
-                // WAIT for fly to finish before scanning
-                setTimeout(() => {
-                    scanArea(lat, lon);
-                }, 1600);
+                setTimeout(() => { scanArea(lat, lon); }, 1600);
             } else {
                 alert("Zip not found!");
             }
         } catch(e) { console.error(e); alert("Search failed."); }
     }
 
-    // --- HYBRID SCANNER ---
+    // --- SCANNER ---
     async function scanArea(lat, lng) {
         setStatus("Scanning...");
         storesFoundCount = 0;
-        seenStoreIds.clear(); // Reset duplicates
+        seenStoreIds.clear(); 
 
-        // Run searches in batches to be nice to the server
         for (let term of SEARCH_TERMS) {
             await fetchPhoton(term, lat, lng);
         }
 
-        if(storesFoundCount === 0) {
-            setStatus("No stores found.");
-        } else {
-            setStatus("Done! Found " + storesFoundCount + " stores.");
-        }
+        if(storesFoundCount === 0) setStatus("No stores found.");
+        else setStatus("Done! Found " + storesFoundCount + " stores.");
     }
 
     async function fetchPhoton(term, lat, lng) {
-        // limit=15 per term ensures we get a mix of everything
         var url = `https://photon.komoot.io/api/?q=${encodeURIComponent(term)}&lat=${lat}&lon=${lng}&limit=15`;
 
         try {
@@ -173,19 +152,16 @@
             
             if (data.features) {
                 data.features.forEach(feature => {
-                    var coords = feature.geometry.coordinates;
-                    var sLat = coords[1];
-                    var sLng = coords[0];
+                    var sLat = feature.geometry.coordinates[1];
+                    var sLng = feature.geometry.coordinates[0];
                     var sName = feature.properties.name || term;
-                    
-                    // DEDUPING LOGIC: Use OSM ID to prevent double pins
                     var storeId = feature.properties.osm_id;
-                    if (seenStoreIds.has(storeId)) return; // Skip if already drawn
+                    
+                    if (seenStoreIds.has(storeId)) return; 
                     seenStoreIds.add(storeId);
-
                     storesFoundCount++;
                     
-                    // Grey Pin
+                    // Grey Pin (Report Trigger)
                     var marker = L.circleMarker([sLat, sLng], {
                         color: '#555', fillColor: '#ccc', fillOpacity: 0.6, radius: 6, weight: 1
                     }).addTo(appMap);
@@ -202,9 +178,7 @@
                     `);
                 });
             }
-        } catch (err) {
-            console.error("Photon Error (" + term + "):", err);
-        }
+        } catch (err) { console.error("Photon Error (" + term + "):", err); }
     }
 
     function setStatus(msg) {
@@ -214,14 +188,30 @@
     }
 
     async function fetchSupabaseReports() {
+        // Fetch reports (limit 100 recent)
         const { data } = await appSupabase.from('reports').select('*').order('created_at', { ascending: false }).limit(100);
+        
         if (data) {
             data.forEach(function(r) {
                 var color = r.status === 'In Stock' ? '#28a745' : (r.status === 'Low' ? 'orange' : '#d7003a');
-                // Larger Colored Pin for Verified Reports
+                
+                // FORMAT DATE: "Jan 19, 8:22 PM"
+                var date = new Date(r.created_at).toLocaleString('en-US', { 
+                    month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' 
+                });
+
+                // Verified Pin (Colored)
                 L.circleMarker([r.lat, r.lng], {
                     color: 'white', fillColor: color, fillOpacity: 1, radius: 9, weight: 2
-                }).addTo(appMap).bindPopup(`<b>${r.store_name}</b><br>${r.flavor}<br><b>${r.status}</b>`);
+                }).addTo(appMap).bindPopup(`
+                    <div style="text-align:center">
+                        <b>${r.store_name}</b><br>
+                        <span style="color:#666">${r.flavor}</span><br>
+                        <b style="font-size:14px">${r.status}</b><br>
+                        <hr style="margin:5px 0; border:0; border-top:1px solid #eee">
+                        <small style="color:#888">Reported: ${date}</small>
+                    </div>
+                `);
             });
         }
     }
@@ -239,12 +229,7 @@
         }
     }
 
-    window.openReportModal = function() {
-        document.getElementById('storeName').value = "";
-        selectedStoreCoords = appMap.getCenter(); 
-        document.getElementById('reportModal').style.display = 'block';
-        document.getElementById('overlay').style.display = 'block';
-    };
+    // --- UI HELPERS ---
     window.reportFromPin = function(name, lat, lng) {
         document.getElementById('storeName').value = name;
         selectedStoreCoords = { lat: lat, lng: lng }; 
@@ -259,9 +244,10 @@
         var sName = document.getElementById('storeName').value;
         var sFlavor = document.getElementById('flavor').value;
         var sStatus = document.getElementById('status').value;
-        if (!sName) return alert("Enter store name!");
+        
         var finalLat = selectedStoreCoords.lat;
         var finalLng = selectedStoreCoords.lng;
+
         const { error } = await appSupabase.from('reports').insert({ store_name: sName, flavor: sFlavor, status: sStatus, lat: finalLat, lng: finalLng });
         if (error) { alert("Failed."); } else { alert("Stock Updated!"); closeModal(); fetchSupabaseReports(); }
     };

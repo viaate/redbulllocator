@@ -3,34 +3,18 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
-  <title>Red Bull Finder - Fixed</title>
+  <title>Red Bull Finder - v5 Dynamic</title>
   
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.css" />
   <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 
   <style>
-    /* Reset and Layout */
-    html, body { height: 100%; margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
+    /* Reset */
+    html, body { height: 100%; margin: 0; padding: 0; font-family: sans-serif; }
     
-    #map { height: 100%; width: 100%; background-color: #d4d4d4; z-index: 1; }
-
-    /* Debug Box */
-    #status-log {
-        position: absolute;
-        top: 10px;
-        left: 10px;
-        background: rgba(0, 0, 0, 0.85);
-        color: #00ff41;
-        font-family: monospace;
-        font-size: 12px;
-        padding: 8px;
-        border-radius: 4px;
-        z-index: 9999;
-        pointer-events: none;
-        max-width: 300px;
-        white-space: pre-wrap;
-    }
+    /* Dark Grey Background */
+    #map { height: 100%; width: 100%; background-color: #333; z-index: 1; }
 
     /* Floating Button */
     .report-btn {
@@ -60,10 +44,8 @@
 </head>
 <body>
 
-  <div id="status-log">System starting...</div>
-
   <div id="map"></div>
-  <button class="report-btn" onclick="openReportModal()">+ Report Stock</button>
+  <button class="report-btn" onclick="openReportModal()">+ Manual Report</button>
   <div class="overlay" id="overlay" onclick="closeModal()"></div>
 
   <div class="modal" id="reportModal">
@@ -72,16 +54,14 @@
         <label>Store Name</label>
         <input type="text" id="storeName" placeholder="e.g. 7-Eleven" />
     </div>
+    
     <div class="form-group">
       <label>Flavor</label>
       <select id="flavor">
-        <option value="Original">Original</option>
-        <option value="Sugarfree">Sugarfree</option>
-        <option value="Juneberry">Juneberry</option>
-        <option value="Watermelon">Watermelon</option>
-        <option value="Amber">Amber (Strawberry)</option>
+        <option>Loading flavors...</option>
       </select>
     </div>
+
     <div class="form-group">
       <label>Status</label>
       <select id="status">
@@ -95,107 +75,154 @@
   </div>
 
   <script>
-    // --- SAFE VARIABLES (Using 'var' to prevent redeclaration crashes) ---
+    // --- VARIABLES ---
     var appMap = null;
     var appSupabase = null;
     var userPos = null;
-    var logEl = document.getElementById('status-log');
+    var selectedStoreCoords = null; 
 
-    // 1. Logging Function
-    function debugLog(msg) {
-        if(logEl) logEl.innerText += "\n> " + msg;
-        console.log("[App]", msg);
-    }
-
-    // 2. Error Trapper
-    window.onerror = function(msg, url, line) {
-        debugLog("ERROR: " + msg);
-        return false;
-    };
-
-    // 3. Configuration
+    // --- CONFIGURATION ---
     var DB_URL = 'https://vwyvlyawbwfzwfyjojsc.supabase.co';
     var DB_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InZ3eXZseWF3YndmendmeWpvanNjIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Njg4NzI4MTIsImV4cCI6MjA4NDQ0ODgxMn0.I74HObejsbKGW3uy59iAw0W2crVMxuscuQOYSTdbbBA';
 
-    // 4. Main Startup
+    // --- STARTUP ---
     window.onload = async function() {
-        debugLog("Window loaded. Initializing...");
+        console.log("Starting v5...");
 
-        // Check Libraries
-        if (typeof L === 'undefined') { debugLog("CRITICAL: Leaflet library missing."); return; }
-        if (typeof window.supabase === 'undefined') { debugLog("CRITICAL: Supabase library missing."); return; }
+        // 1. Init Supabase
+        appSupabase = window.supabase.createClient(DB_URL, DB_KEY);
 
-        try {
-            // Init Supabase
-            appSupabase = window.supabase.createClient(DB_URL, DB_KEY);
-            debugLog("Database client ready.");
+        // 2. Load Flavors from DB immediately
+        loadFlavors();
 
-            // Init Map
-            appMap = L.map('map').setView([39.82, -98.57], 4);
-            L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
-                maxZoom: 19,
-                attribution: '© OSM'
-            }).addTo(appMap);
-            debugLog("Map initialized.");
+        // 3. Init Map
+        appMap = L.map('map').setView([39.82, -98.57], 4);
+        L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png', {
+            maxZoom: 19, attribution: '© OSM'
+        }).addTo(appMap);
 
-            // Locate User
-            appMap.locate({setView: true, maxZoom: 15});
-            appMap.on('locationfound', function(e) {
-                userPos = e.latlng;
-                L.marker(e.latlng).addTo(appMap).bindPopup("You are here").openPopup();
-                debugLog("Location found.");
-            });
-            appMap.on('locationerror', function(e) {
-                debugLog("Location access denied.");
-            });
+        // 4. Locate User
+        appMap.locate({setView: true, maxZoom: 14});
+        
+        appMap.on('locationfound', function(e) {
+            userPos = e.latlng;
+            L.marker(e.latlng).addTo(appMap).bindPopup("You are here").openPopup();
+            
+            // Once located, fetch data
+            fetchOSMStores(e.latitude, e.longitude);
+            fetchSupabaseReports();
+        });
 
-            // Load Data
-            fetchReports();
-
-        } catch (err) {
-            debugLog("Startup Crash: " + err.message);
-        }
+        appMap.on('locationerror', function(e) {
+            alert("Please allow location to see stores near you.");
+        });
     };
 
-    // 5. Fetch Reports
-    async function fetchReports() {
-        try {
-            debugLog("Fetching data...");
-            const { data, error } = await appSupabase
-                .from('reports')
-                .select('*')
-                .order('created_at', { ascending: false })
-                .limit(50);
+    // --- NEW: Load Flavors from Database ---
+    async function loadFlavors() {
+        const { data, error } = await appSupabase
+            .from('flavors')
+            .select('*')
+            .eq('is_active', true) // Only get active flavors
+            .order('name', { ascending: true });
 
-            if (error) throw error;
-            
-            debugLog("Found " + (data ? data.length : 0) + " reports.");
-            
-            if (data) {
-                data.forEach(function(r) {
-                    var color = r.status === 'Out of Stock' ? 'red' : (r.status === 'Low' ? 'orange' : 'green');
-                    L.circleMarker([r.lat, r.lng], {
-                        color: color,
-                        fillColor: color,
-                        fillOpacity: 0.7,
-                        radius: 8
-                    }).addTo(appMap).bindPopup(
-                        "<b>" + r.store_name + "</b><br>" + r.flavor + "<br>" + r.status
-                    );
-                });
-            }
-        } catch (err) {
-            debugLog("Fetch Error: " + err.message);
+        var selectBox = document.getElementById('flavor');
+        selectBox.innerHTML = ""; // Clear "Loading..." text
+
+        if (data) {
+            data.forEach(f => {
+                var option = document.createElement("option");
+                option.value = f.name;
+                option.text = f.name;
+                selectBox.appendChild(option);
+            });
         }
     }
 
-    // 6. UI Functions (Defined globally so HTML buttons can see them)
-    window.openReportModal = function() {
-        if (!userPos) {
-            alert("Waiting for location... make sure GPS is on!");
-            appMap.locate({setView: true, maxZoom: 15});
-            return;
+    // --- FUNCTION 2: Fetch Live Stores from OpenStreetMap ---
+    async function fetchOSMStores(lat, lng) {
+        // Search Radius: ~5000 meters around user
+        // We look for: 7-Eleven, CVS, Walmart, QuikTrip, Walgreens, Target, Casey's
+        var query = `
+            [out:json][timeout:25];
+            (
+              node["name"~"7-Eleven|CVS|Walmart|QuikTrip|Walgreens|Target|Costco|Casey's"](around:5000, ${lat}, ${lng});
+            );
+            out body;
+        `;
+        
+        var url = "https://overpass-api.de/api/interpreter?data=" + encodeURIComponent(query);
+
+        try {
+            var response = await fetch(url);
+            var data = await response.json();
+            
+            if(data.elements) {
+                data.elements.forEach(store => {
+                    // Create Grey Pin
+                    var marker = L.circleMarker([store.lat, store.lon], {
+                        color: '#888',       
+                        fillColor: '#ccc',   
+                        fillOpacity: 0.5,
+                        radius: 6,
+                        weight: 1
+                    }).addTo(appMap);
+
+                    // Click to Report
+                    marker.bindPopup(`
+                        <b>${store.tags.name || "Store"}</b><br>
+                        <button onclick="reportFromPin('${store.tags.name.replace(/'/g, "\\'")}', ${store.lat}, ${store.lon})">
+                            Report Stock Here
+                        </button>
+                    `);
+                });
+            }
+        } catch (err) {
+            console.error("OSM Error:", err);
         }
+    }
+
+    // --- FUNCTION 3: Fetch User Reports ---
+    async function fetchSupabaseReports() {
+        const { data, error } = await appSupabase
+            .from('reports')
+            .select('*')
+            .order('created_at', { ascending: false })
+            .limit(100);
+
+        if (data) {
+            data.forEach(function(r) {
+                var color = '#999';
+                if (r.status === 'In Stock') color = '#28a745'; 
+                else if (r.status === 'Low') color = 'orange';
+                else if (r.status === 'Out of Stock') color = '#d7003a'; 
+
+                // Add COLORED pin on top
+                L.circleMarker([r.lat, r.lng], {
+                    color: color,
+                    fillColor: color,
+                    fillOpacity: 0.9,
+                    radius: 8,
+                    weight: 2
+                }).addTo(appMap).bindPopup(
+                    `<b>${r.store_name}</b><br>${r.flavor}<br><b>${r.status}</b><br><small>Verified User</small>`
+                );
+            });
+        }
+    }
+
+    // --- UI FUNCTIONS ---
+    window.openReportModal = function() {
+        if (!userPos) { alert("Waiting for location..."); return; }
+        document.getElementById('storeName').value = "";
+        selectedStoreCoords = userPos; 
+        document.getElementById('reportModal').style.display = 'block';
+        document.getElementById('overlay').style.display = 'block';
+    };
+
+    window.reportFromPin = function(name, lat, lng) {
+        document.getElementById('storeName').value = name;
+        selectedStoreCoords = { lat: lat, lng: lng }; 
         document.getElementById('reportModal').style.display = 'block';
         document.getElementById('overlay').style.display = 'block';
     };
@@ -212,22 +239,23 @@
 
         if (!sName) return alert("Enter store name!");
 
-        debugLog("Submitting...");
+        var finalLat = selectedStoreCoords ? selectedStoreCoords.lat : userPos.lat;
+        var finalLng = selectedStoreCoords ? selectedStoreCoords.lng : userPos.lng;
+
         const { error } = await appSupabase.from('reports').insert({
             store_name: sName,
             flavor: sFlavor,
             status: sStatus,
-            lat: userPos.lat,
-            lng: userPos.lng
+            lat: finalLat,
+            lng: finalLng
         });
 
         if (error) {
-            debugLog("Upload failed: " + error.message);
             alert("Failed to upload report.");
         } else {
-            alert("Report Sent!");
+            alert("Stock Updated!");
             closeModal();
-            fetchReports();
+            fetchSupabaseReports();
         }
     };
   </script>

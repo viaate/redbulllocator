@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
-  <title>Red Bull Finder - v9 Server Hop</title>
+  <title>Red Bull Finder - v10 Fast</title>
   
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.css" />
   <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.js"></script>
@@ -95,56 +95,71 @@
     var DB_URL = 'https://vwyvlyawbwfzwfyjojsc.supabase.co';
     var DB_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InZ3eXZseWF3YndmendmeWpvanNjIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Njg4NzI4MTIsImV4cCI6MjA4NDQ0ODgxMn0.I74HObejsbKGW3uy59iAw0W2crVMxuscuQOYSTdbbBA';
 
-    // List of free servers to try
     var OSM_SERVERS = [
-        "https://overpass-api.de/api/interpreter",       // Main (Germany)
-        "https://overpass.kumi.systems/api/interpreter"  // Backup (France)
+        "https://overpass-api.de/api/interpreter", 
+        "https://overpass.kumi.systems/api/interpreter"
     ];
 
     window.onload = function() {
         appSupabase = window.supabase.createClient(DB_URL, DB_KEY);
         loadFlavors();
-        appMap = L.map('map').setView([39.0, -94.5], 10);
+        appMap = L.map('map').setView([39.09, -94.58], 12); // Default to KC
         L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png', { maxZoom: 19 }).addTo(appMap);
     };
 
     window.startApp = function() {
         document.getElementById('welcome-screen').style.display = 'none';
         document.getElementById('mainReportBtn').style.display = 'block';
-        statusEl.innerText = "Requesting Location...";
-        appMap.locate({setView: true, maxZoom: 14});
+        statusEl.innerText = "Requesting Location (8s timeout)...";
+        
+        // --- NEW SAFETY FEATURE: TIMEOUT ---
+        appMap.locate({
+            setView: true, 
+            maxZoom: 14, 
+            timeout: 8000, // Stop waiting after 8 seconds
+            enableHighAccuracy: false // Faster
+        });
     };
 
     setTimeout(() => {
         if(appMap) {
             appMap.on('locationfound', function(e) {
                 userPos = e.latlng;
-                statusEl.innerText = "Location Found. Contacting OSM...";
+                statusEl.innerText = "Location Found! Loading stores...";
                 L.marker(e.latlng).addTo(appMap).bindPopup("You are here").openPopup();
-                
-                // Try fetching stores with retry logic
                 fetchWithRetry(e.latitude, e.longitude, 0);
                 fetchSupabaseReports();
             });
 
+            // If GPS fails or times out, this runs automatically:
             appMap.on('locationerror', function(e) {
-                statusEl.innerText = "Error: Location Denied.";
-                alert("Location Access Denied. Please enable it.");
+                statusEl.innerText = "GPS Timeout. Showing Kansas City defaults.";
+                console.log("GPS Failed: ", e.message);
+                
+                // FALLBACK: Default to Kansas City (Mission Hills area)
+                var fallbackLat = 39.02;
+                var fallbackLng = -94.60;
+                
+                appMap.setView([fallbackLat, fallbackLng], 13);
+                userPos = { lat: fallbackLat, lng: fallbackLng }; // Fake user location so app still works
+                
+                fetchWithRetry(fallbackLat, fallbackLng, 0);
+                fetchSupabaseReports();
             });
         }
     }, 1000);
 
-    // --- SMART RETRY SYSTEM ---
+    // --- RETRY SYSTEM ---
     async function fetchWithRetry(lat, lng, serverIndex) {
         if (serverIndex >= OSM_SERVERS.length) {
-            statusEl.innerText = "All servers busy. Try again in 30s.";
+            statusEl.innerText = "Servers busy. Try zooming/moving map.";
             return;
         }
 
         var serverUrl = OSM_SERVERS[serverIndex];
-        statusEl.innerText = "Trying Server " + (serverIndex + 1) + "...";
+        statusEl.innerText = "Checking stores (Server " + (serverIndex + 1) + ")...";
 
-        // Query: 5km Radius (Smaller = Faster = Less likely to fail)
+        // Query: 5km Radius
         var query = `
             [out:json][timeout:15];
             (
@@ -159,19 +174,16 @@
         try {
             var response = await fetch(fullUrl);
             if (!response.ok) throw new Error("Busy");
-            
             var data = await response.json();
             
             if(data.elements && data.elements.length > 0) {
-                statusEl.innerText = "Success! Found " + data.elements.length + " stores.";
+                statusEl.innerText = "Success! " + data.elements.length + " stores nearby.";
                 drawStores(data.elements);
             } else {
-                statusEl.innerText = "No stores found nearby (5km radius).";
+                statusEl.innerText = "No stores found nearby.";
             }
 
         } catch (err) {
-            console.warn("Server " + (serverIndex+1) + " failed. Switching...");
-            // RECURSIVE RETRY: Try the next server
             fetchWithRetry(lat, lng, serverIndex + 1);
         }
     }
@@ -221,7 +233,8 @@
 
     // --- UI HELPERS ---
     window.openReportModal = function() {
-        if (!userPos) { alert("Please click 'Find Stores Near Me' first!"); return; }
+        // Allow reporting even if GPS failed (uses center of map or fallback)
+        if (!userPos) userPos = appMap.getCenter();
         document.getElementById('storeName').value = "";
         selectedStoreCoords = userPos; 
         document.getElementById('reportModal').style.display = 'block';

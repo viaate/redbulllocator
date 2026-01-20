@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
-  <title>Red Bull Finder - v8 Bulletproof</title>
+  <title>Red Bull Finder - v9 Server Hop</title>
   
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.css" />
   <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.js"></script>
@@ -12,11 +12,9 @@
   <style>
     /* Reset */
     html, body { height: 100%; margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
-    
-    /* Map */
     #map { height: 100%; width: 100%; background-color: #333; z-index: 1; }
 
-    /* STATUS BAR (Debug Info) */
+    /* STATUS BAR */
     #status-bar {
         position: fixed; bottom: 0; left: 0; width: 100%;
         background: rgba(0,0,0,0.9); color: #00ff41;
@@ -97,93 +95,103 @@
     var DB_URL = 'https://vwyvlyawbwfzwfyjojsc.supabase.co';
     var DB_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InZ3eXZseWF3YndmendmeWpvanNjIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Njg4NzI4MTIsImV4cCI6MjA4NDQ0ODgxMn0.I74HObejsbKGW3uy59iAw0W2crVMxuscuQOYSTdbbBA';
 
+    // List of free servers to try
+    var OSM_SERVERS = [
+        "https://overpass-api.de/api/interpreter",       // Main (Germany)
+        "https://overpass.kumi.systems/api/interpreter"  // Backup (France)
+    ];
+
     window.onload = function() {
         appSupabase = window.supabase.createClient(DB_URL, DB_KEY);
         loadFlavors();
-        
         appMap = L.map('map').setView([39.0, -94.5], 10);
-        L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png', {
-            maxZoom: 19, attribution: '© OSM'
-        }).addTo(appMap);
+        L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png', { maxZoom: 19 }).addTo(appMap);
     };
 
     window.startApp = function() {
         document.getElementById('welcome-screen').style.display = 'none';
         document.getElementById('mainReportBtn').style.display = 'block';
         statusEl.innerText = "Requesting Location...";
-        appMap.locate({setView: true, maxZoom: 13});
+        appMap.locate({setView: true, maxZoom: 14});
     };
 
     setTimeout(() => {
         if(appMap) {
             appMap.on('locationfound', function(e) {
                 userPos = e.latlng;
-                statusEl.innerText = "Location Found. Fetching stores...";
+                statusEl.innerText = "Location Found. Contacting OSM...";
                 L.marker(e.latlng).addTo(appMap).bindPopup("You are here").openPopup();
                 
-                // Fetch Stores (Safe Mode)
-                fetchOSMStoresSafe(e.latitude, e.longitude);
+                // Try fetching stores with retry logic
+                fetchWithRetry(e.latitude, e.longitude, 0);
                 fetchSupabaseReports();
             });
 
             appMap.on('locationerror', function(e) {
                 statusEl.innerText = "Error: Location Denied.";
-                alert("Location Access Denied. Please enable it in browser settings.");
+                alert("Location Access Denied. Please enable it.");
             });
         }
     }, 1000);
 
-    // --- SAFETY MODE: NODES ONLY ---
-    async function fetchOSMStoresSafe(lat, lng) {
-        statusEl.innerText = "Querying OSM (Nodes only)...";
-        
-        // We removed 'nwr' (shapes) and switched back to 'node' (points) to prevent crashes.
-        // Radius: 8km
+    // --- SMART RETRY SYSTEM ---
+    async function fetchWithRetry(lat, lng, serverIndex) {
+        if (serverIndex >= OSM_SERVERS.length) {
+            statusEl.innerText = "All servers busy. Try again in 30s.";
+            return;
+        }
+
+        var serverUrl = OSM_SERVERS[serverIndex];
+        statusEl.innerText = "Trying Server " + (serverIndex + 1) + "...";
+
+        // Query: 5km Radius (Smaller = Faster = Less likely to fail)
         var query = `
-            [out:json][timeout:25];
+            [out:json][timeout:15];
             (
               node["name"~"7-Eleven|CVS|Walmart|QuikTrip|Walgreens|Target|Costco|Casey's|Hy-Vee|Dollar General", i]
-              (around:8000, ${lat}, ${lng});
+              (around:5000, ${lat}, ${lng});
             );
             out body;
         `;
         
-        var url = "https://overpass-api.de/api/interpreter?data=" + encodeURIComponent(query);
+        var fullUrl = serverUrl + "?data=" + encodeURIComponent(query);
 
         try {
-            var response = await fetch(url);
-            if (!response.ok) throw new Error("Server Busy");
+            var response = await fetch(fullUrl);
+            if (!response.ok) throw new Error("Busy");
             
             var data = await response.json();
             
             if(data.elements && data.elements.length > 0) {
-                statusEl.innerText = "Found " + data.elements.length + " stores! Drawing...";
-                
-                data.elements.forEach(store => {
-                    // Safe Check: Ensure lat/lon exists
-                    if(store.lat && store.lon) {
-                        var sName = store.tags.name || "Store";
-                        
-                        var marker = L.circleMarker([store.lat, store.lon], {
-                            color: '#666', fillColor: '#bbb', fillOpacity: 0.5, radius: 6, weight: 1
-                        }).addTo(appMap);
-
-                        marker.bindPopup(`
-                            <b>${sName}</b><br>
-                            <button onclick="reportFromPin('${sName.replace(/'/g, "\\'")}', ${store.lat}, ${store.lon})">
-                                Report Stock Here
-                            </button>
-                        `);
-                    }
-                });
-                statusEl.innerText = "Map Ready. " + data.elements.length + " stores loaded.";
+                statusEl.innerText = "Success! Found " + data.elements.length + " stores.";
+                drawStores(data.elements);
             } else {
-                statusEl.innerText = "No stores found nearby (8km radius).";
+                statusEl.innerText = "No stores found nearby (5km radius).";
             }
+
         } catch (err) {
-            statusEl.innerText = "Error: " + err.message;
-            console.error(err);
+            console.warn("Server " + (serverIndex+1) + " failed. Switching...");
+            // RECURSIVE RETRY: Try the next server
+            fetchWithRetry(lat, lng, serverIndex + 1);
         }
+    }
+
+    function drawStores(stores) {
+        stores.forEach(store => {
+            if(store.lat && store.lon) {
+                var sName = store.tags.name || "Store";
+                var marker = L.circleMarker([store.lat, store.lon], {
+                    color: '#666', fillColor: '#bbb', fillOpacity: 0.5, radius: 6, weight: 1
+                }).addTo(appMap);
+
+                marker.bindPopup(`
+                    <b>${sName}</b><br>
+                    <button onclick="reportFromPin('${sName.replace(/'/g, "\\'")}', ${store.lat}, ${store.lon})">
+                        Report Stock Here
+                    </button>
+                `);
+            }
+        });
     }
 
     async function fetchSupabaseReports() {

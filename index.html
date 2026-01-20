@@ -1,0 +1,208 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <title>Red Bull Finder</title>
+  
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  
+  <script src="https://unpkg.com/@supabase/supabase-js@2"></script>
+
+  <style>
+    body { margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; }
+    #map { height: 100vh; width: 100%; }
+    
+    /* Report Button */
+    .report-btn {
+      position: absolute;
+      bottom: 30px;
+      right: 20px;
+      z-index: 1000;
+      background-color: #d7003a; /* Red Bull Red */
+      color: white;
+      border: none;
+      padding: 15px 25px;
+      border-radius: 50px;
+      font-size: 16px;
+      font-weight: bold;
+      box-shadow: 0 4px 6px rgba(0,0,0,0.3);
+      cursor: pointer;
+    }
+
+    /* Modal Styling */
+    .modal {
+      display: none;
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      width: 85%;
+      max-width: 320px;
+      background: white;
+      padding: 20px;
+      border-radius: 12px;
+      z-index: 2000;
+      box-shadow: 0 10px 25px rgba(0,0,0,0.5);
+    }
+    .modal h3 { margin-top: 0; color: #1f305e; }
+    .form-group { margin-bottom: 15px; }
+    label { display: block; margin-bottom: 5px; font-weight: bold; font-size: 12px; }
+    select, input { width: 100%; padding: 10px; border: 1px solid #ccc; border-radius: 6px; box-sizing: border-box; }
+    .actions { display: flex; gap: 10px; margin-top: 15px; }
+    button.submit { background: #1f305e; color: white; flex: 1; border: none; padding: 10px; border-radius: 6px; }
+    button.cancel { background: #eee; color: #333; flex: 1; border: none; padding: 10px; border-radius: 6px; }
+    
+    .overlay { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.4); z-index: 1500; }
+  </style>
+</head>
+<body>
+
+  <div id="map"></div>
+  <button class="report-btn" onclick="startReport()">+ Report Stock</button>
+
+  <div class="overlay" id="overlay" onclick="closeModal()"></div>
+
+  <div class="modal" id="reportModal">
+    <h3>Found Red Bull?</h3>
+    <div class="form-group">
+      <label>Store Name (e.g. 7-Eleven)</label>
+      <input type="text" id="storeName" placeholder="Where are you?" />
+    </div>
+    <div class="form-group">
+      <label>Flavor</label>
+      <select id="flavor">
+        <option value="Original">Original</option>
+        <option value="Sugarfree">Sugarfree</option>
+        <option value="Juneberry">Juneberry</option>
+        <option value="Watermelon">Watermelon</option>
+        <option value="Amber">Amber (Strawberry)</option>
+      </select>
+    </div>
+    <div class="form-group">
+      <label>Stock Status</label>
+      <select id="status">
+        <option value="In Stock">🟢 In Stock</option>
+        <option value="Low">🟡 Low Stock</option>
+        <option value="Out of Stock">🔴 Out of Stock</option>
+      </select>
+    </div>
+    <div class="actions">
+      <button class="cancel" onclick="closeModal()">Cancel</button>
+      <button class="submit" onclick="submitReport()">Submit</button>
+    </div>
+  </div>
+
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+
+  <script>
+    // --- CONFIGURATION ---
+    const SUPABASE_URL = 'https://vwyvlyawbwfzwfyjojsc.supabase.co';
+    const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InZ3eXZseWF3YndmendmeWpvanNjIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Njg4NzI4MTIsImV4cCI6MjA4NDQ0ODgxMn0.I74HObejsbKGW3uy59iAw0W2crVMxuscuQOYSTdbbBA'; 
+
+    // Initialize Supabase
+    const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+
+    // Initialize Map
+    // Default view: Center of US
+    const map = L.map('map').setView([39.8283, -98.5795], 4);
+
+    L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png', {
+      attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OSM</a>',
+      maxZoom: 19
+    }).addTo(map);
+
+    // Locate User on Load
+    map.locate({setView: true, maxZoom: 15});
+    
+    map.on('locationfound', (e) => {
+      L.marker(e.latlng).addTo(map).bindPopup("You are here").openPopup();
+      window.userLocation = e.latlng; 
+    });
+
+    map.on('locationerror', (e) => {
+      console.log("Location access denied or failed.");
+    });
+
+    // --- FUNCTIONS ---
+
+    // 1. Load Existing Reports
+    async function loadReports() {
+      const { data, error } = await supabase
+        .from('reports')
+        .select('*')
+        .order('created_at', { ascending: false })
+        .limit(100); 
+
+      if (error) console.error('Error loading reports:', error);
+      
+      if (data) {
+        data.forEach(report => {
+          let color = 'green';
+          if(report.status === 'Low') color = 'orange';
+          if(report.status === 'Out of Stock') color = 'red';
+
+          L.circleMarker([report.lat, report.lng], {
+            color: color,
+            fillColor: color,
+            fillOpacity: 0.8,
+            radius: 8
+          }).addTo(map).bindPopup(`
+            <b>${report.store_name}</b><br>
+            ${report.flavor}<br>
+            <b>${report.status}</b><br>
+            <small>${new Date(report.created_at).toLocaleDateString()}</small>
+          `);
+        });
+      }
+    }
+
+    // 2. Handle Reporting
+    function startReport() {
+      if (!window.userLocation) {
+        alert("We need your location to mark the map! Please allow location access.");
+        map.locate({setView: true, maxZoom: 15});
+        return;
+      }
+      document.getElementById('reportModal').style.display = 'block';
+      document.getElementById('overlay').style.display = 'block';
+    }
+
+    function closeModal() {
+      document.getElementById('reportModal').style.display = 'none';
+      document.getElementById('overlay').style.display = 'none';
+    }
+
+    async function submitReport() {
+      const storeName = document.getElementById('storeName').value;
+      const flavor = document.getElementById('flavor').value;
+      const status = document.getElementById('status').value;
+      
+      if (!storeName) return alert("Please enter a store name");
+
+      const { error } = await supabase
+        .from('reports')
+        .insert({
+          store_name: storeName,
+          flavor: flavor,
+          status: status,
+          lat: window.userLocation.lat,
+          lng: window.userLocation.lng
+        });
+
+      if (error) {
+        alert("Error submitting report! Check console.");
+        console.error(error);
+      } else {
+        alert("Report Submitted!");
+        closeModal();
+        loadReports(); // Refresh map
+      }
+    }
+
+    // Load reports on startup
+    loadReports();
+
+  </script>
+</body>
+</html>

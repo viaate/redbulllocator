@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
-  <title>Red Bull Finder - v5 Dynamic</title>
+  <title>Red Bull Finder - v6</title>
   
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.css" />
   <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.js"></script>
@@ -11,26 +11,35 @@
 
   <style>
     /* Reset */
-    html, body { height: 100%; margin: 0; padding: 0; font-family: sans-serif; }
+    html, body { height: 100%; margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
     
-    /* Dark Grey Background */
+    /* Map */
     #map { height: 100%; width: 100%; background-color: #333; z-index: 1; }
 
-    /* Floating Button */
+    /* WELCOME SCREEN (Forces user interaction) */
+    #welcome-screen {
+        position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+        background: #1f305e; /* Red Bull Blue */
+        z-index: 9999;
+        display: flex; flex-direction: column;
+        align-items: center; justify-content: center;
+        color: white; text-align: center;
+    }
+    #welcome-screen h1 { margin-bottom: 20px; font-style: italic; }
+    .start-btn {
+        background: #d7003a; /* Red Bull Red */
+        color: white; border: none; padding: 20px 40px;
+        font-size: 20px; font-weight: bold; border-radius: 50px;
+        cursor: pointer; box-shadow: 0 4px 15px rgba(0,0,0,0.4);
+    }
+
+    /* Floating Report Button */
     .report-btn {
-      position: absolute;
-      bottom: 30px;
-      right: 20px;
-      z-index: 2000;
-      background-color: #d7003a;
-      color: white;
-      border: none;
-      padding: 15px 25px;
-      border-radius: 50px;
-      font-size: 16px;
-      font-weight: bold;
-      box-shadow: 0 4px 6px rgba(0,0,0,0.3);
-      cursor: pointer;
+      position: absolute; bottom: 30px; right: 20px; z-index: 2000;
+      background-color: #d7003a; color: white; border: none;
+      padding: 15px 25px; border-radius: 50px; font-size: 16px;
+      font-weight: bold; box-shadow: 0 4px 6px rgba(0,0,0,0.3);
+      cursor: pointer; display: none; /* Hidden until started */
     }
 
     /* Modal */
@@ -38,30 +47,25 @@
     .form-group { margin-bottom: 12px; }
     label { font-weight: bold; display: block; margin-bottom: 4px; font-size: 12px; }
     input, select { width: 100%; padding: 8px; box-sizing: border-box; border: 1px solid #ccc; border-radius: 4px; }
-    
     .overlay { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.4); z-index: 2500; }
   </style>
 </head>
 <body>
 
+  <div id="welcome-screen">
+      <h1>Red Bull Finder</h1>
+      <p style="max-width:80%; margin-bottom:30px;">Find stock at stores near you.<br>We need your location to show the map.</p>
+      <button class="start-btn" onclick="startApp()">Find Stores Near Me</button>
+  </div>
+
   <div id="map"></div>
-  <button class="report-btn" onclick="openReportModal()">+ Manual Report</button>
+  <button id="mainReportBtn" class="report-btn" onclick="openReportModal()">+ Manual Report</button>
   <div class="overlay" id="overlay" onclick="closeModal()"></div>
 
   <div class="modal" id="reportModal">
     <h3 style="margin-top:0; color:#1f305e;">Report Stock</h3>
-    <div class="form-group">
-        <label>Store Name</label>
-        <input type="text" id="storeName" placeholder="e.g. 7-Eleven" />
-    </div>
-    
-    <div class="form-group">
-      <label>Flavor</label>
-      <select id="flavor">
-        <option>Loading flavors...</option>
-      </select>
-    </div>
-
+    <div class="form-group"><label>Store Name</label><input type="text" id="storeName" placeholder="e.g. 7-Eleven" /></div>
+    <div class="form-group"><label>Flavor</label><select id="flavor"><option>Loading...</option></select></div>
     <div class="form-group">
       <label>Status</label>
       <select id="status">
@@ -81,182 +85,120 @@
     var userPos = null;
     var selectedStoreCoords = null; 
 
-    // --- CONFIGURATION ---
     var DB_URL = 'https://vwyvlyawbwfzwfyjojsc.supabase.co';
     var DB_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InZ3eXZseWF3YndmendmeWpvanNjIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Njg4NzI4MTIsImV4cCI6MjA4NDQ0ODgxMn0.I74HObejsbKGW3uy59iAw0W2crVMxuscuQOYSTdbbBA';
 
     // --- STARTUP ---
-    window.onload = async function() {
-        console.log("Starting v5...");
-
-        // 1. Init Supabase
+    window.onload = function() {
+        // Init Supabase & Map immediately (but don't locate yet)
         appSupabase = window.supabase.createClient(DB_URL, DB_KEY);
-
-        // 2. Load Flavors from DB immediately
         loadFlavors();
 
-        // 3. Init Map
         appMap = L.map('map').setView([39.82, -98.57], 4);
         L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png', {
             maxZoom: 19, attribution: '© OSM'
         }).addTo(appMap);
-
-        // 4. Locate User
-        appMap.locate({setView: true, maxZoom: 14});
-        
-        appMap.on('locationfound', function(e) {
-            userPos = e.latlng;
-            L.marker(e.latlng).addTo(appMap).bindPopup("You are here").openPopup();
-            
-            // Once located, fetch data
-            fetchOSMStores(e.latitude, e.longitude);
-            fetchSupabaseReports();
-        });
-
-        appMap.on('locationerror', function(e) {
-            alert("Please allow location to see stores near you.");
-        });
     };
 
-    // --- NEW: Load Flavors from Database ---
+    // --- TRIGGERED BY BUTTON CLICK (Fixes Permission Issue) ---
+    window.startApp = function() {
+        // Hide Welcome Screen
+        document.getElementById('welcome-screen').style.display = 'none';
+        document.getElementById('mainReportBtn').style.display = 'block';
+
+        // NOW ask for location
+        appMap.locate({setView: true, maxZoom: 14});
+    };
+
+    // Location Events
+    // Note: We attach these *after* the map exists
+    setTimeout(() => {
+        if(appMap) {
+            appMap.on('locationfound', function(e) {
+                userPos = e.latlng;
+                L.marker(e.latlng).addTo(appMap).bindPopup("You are here").openPopup();
+                fetchOSMStores(e.latitude, e.longitude);
+                fetchSupabaseReports();
+            });
+
+            appMap.on('locationerror', function(e) {
+                alert("Location Access Denied.\n\n1. Check your browser settings.\n2. Ensure your GPS is on.\n3. Reload the page.");
+                // Show US view if denied
+                appMap.setView([39.82, -98.57], 4);
+            });
+        }
+    }, 1000);
+
+    // --- DATA LOADING ---
     async function loadFlavors() {
-        const { data, error } = await appSupabase
-            .from('flavors')
-            .select('*')
-            .eq('is_active', true) // Only get active flavors
-            .order('name', { ascending: true });
-
+        const { data } = await appSupabase.from('flavors').select('*').eq('is_active', true).order('name');
         var selectBox = document.getElementById('flavor');
-        selectBox.innerHTML = ""; // Clear "Loading..." text
-
+        selectBox.innerHTML = "";
         if (data) {
             data.forEach(f => {
                 var option = document.createElement("option");
-                option.value = f.name;
-                option.text = f.name;
+                option.value = f.name; option.text = f.name;
                 selectBox.appendChild(option);
             });
         }
     }
 
-    // --- FUNCTION 2: Fetch Live Stores from OpenStreetMap ---
     async function fetchOSMStores(lat, lng) {
-        // Search Radius: ~5000 meters around user
-        // We look for: 7-Eleven, CVS, Walmart, QuikTrip, Walgreens, Target, Casey's
-        var query = `
-            [out:json][timeout:25];
-            (
-              node["name"~"7-Eleven|CVS|Walmart|QuikTrip|Walgreens|Target|Costco|Casey's"](around:5000, ${lat}, ${lng});
-            );
-            out body;
-        `;
-        
+        var query = `[out:json][timeout:25];(node["name"~"7-Eleven|CVS|Walmart|QuikTrip|Walgreens|Target|Costco|Casey's"](around:5000, ${lat}, ${lng}););out body;`;
         var url = "https://overpass-api.de/api/interpreter?data=" + encodeURIComponent(query);
-
         try {
             var response = await fetch(url);
             var data = await response.json();
-            
             if(data.elements) {
                 data.elements.forEach(store => {
-                    // Create Grey Pin
                     var marker = L.circleMarker([store.lat, store.lon], {
-                        color: '#888',       
-                        fillColor: '#ccc',   
-                        fillOpacity: 0.5,
-                        radius: 6,
-                        weight: 1
+                        color: '#888', fillColor: '#ccc', fillOpacity: 0.5, radius: 6, weight: 1
                     }).addTo(appMap);
-
-                    // Click to Report
-                    marker.bindPopup(`
-                        <b>${store.tags.name || "Store"}</b><br>
-                        <button onclick="reportFromPin('${store.tags.name.replace(/'/g, "\\'")}', ${store.lat}, ${store.lon})">
-                            Report Stock Here
-                        </button>
-                    `);
+                    marker.bindPopup(`<b>${store.tags.name || "Store"}</b><br><button onclick="reportFromPin('${store.tags.name.replace(/'/g, "\\'")}', ${store.lat}, ${store.lon})">Report Stock Here</button>`);
                 });
             }
-        } catch (err) {
-            console.error("OSM Error:", err);
-        }
+        } catch (err) { console.error("OSM Error:", err); }
     }
 
-    // --- FUNCTION 3: Fetch User Reports ---
     async function fetchSupabaseReports() {
-        const { data, error } = await appSupabase
-            .from('reports')
-            .select('*')
-            .order('created_at', { ascending: false })
-            .limit(100);
-
+        const { data } = await appSupabase.from('reports').select('*').order('created_at', { ascending: false }).limit(100);
         if (data) {
             data.forEach(function(r) {
-                var color = '#999';
-                if (r.status === 'In Stock') color = '#28a745'; 
-                else if (r.status === 'Low') color = 'orange';
-                else if (r.status === 'Out of Stock') color = '#d7003a'; 
-
-                // Add COLORED pin on top
+                var color = r.status === 'In Stock' ? '#28a745' : (r.status === 'Low' ? 'orange' : '#d7003a');
                 L.circleMarker([r.lat, r.lng], {
-                    color: color,
-                    fillColor: color,
-                    fillOpacity: 0.9,
-                    radius: 8,
-                    weight: 2
-                }).addTo(appMap).bindPopup(
-                    `<b>${r.store_name}</b><br>${r.flavor}<br><b>${r.status}</b><br><small>Verified User</small>`
-                );
+                    color: color, fillColor: color, fillOpacity: 0.9, radius: 8, weight: 2
+                }).addTo(appMap).bindPopup(`<b>${r.store_name}</b><br>${r.flavor}<br><b>${r.status}</b>`);
             });
         }
     }
 
-    // --- UI FUNCTIONS ---
+    // --- UI HELPERS ---
     window.openReportModal = function() {
-        if (!userPos) { alert("Waiting for location..."); return; }
+        if (!userPos) { alert("Please click 'Find Stores Near Me' first!"); return; }
         document.getElementById('storeName').value = "";
         selectedStoreCoords = userPos; 
         document.getElementById('reportModal').style.display = 'block';
         document.getElementById('overlay').style.display = 'block';
     };
-
     window.reportFromPin = function(name, lat, lng) {
         document.getElementById('storeName').value = name;
         selectedStoreCoords = { lat: lat, lng: lng }; 
         document.getElementById('reportModal').style.display = 'block';
         document.getElementById('overlay').style.display = 'block';
     };
-
     window.closeModal = function() {
         document.getElementById('reportModal').style.display = 'none';
         document.getElementById('overlay').style.display = 'none';
     };
-
     window.submitReport = async function() {
         var sName = document.getElementById('storeName').value;
         var sFlavor = document.getElementById('flavor').value;
         var sStatus = document.getElementById('status').value;
-
         if (!sName) return alert("Enter store name!");
-
         var finalLat = selectedStoreCoords ? selectedStoreCoords.lat : userPos.lat;
         var finalLng = selectedStoreCoords ? selectedStoreCoords.lng : userPos.lng;
-
-        const { error } = await appSupabase.from('reports').insert({
-            store_name: sName,
-            flavor: sFlavor,
-            status: sStatus,
-            lat: finalLat,
-            lng: finalLng
-        });
-
-        if (error) {
-            alert("Failed to upload report.");
-        } else {
-            alert("Stock Updated!");
-            closeModal();
-            fetchSupabaseReports();
-        }
+        const { error } = await appSupabase.from('reports').insert({ store_name: sName, flavor: sFlavor, status: sStatus, lat: finalLat, lng: finalLng });
+        if (error) { alert("Failed."); } else { alert("Stock Updated!"); closeModal(); fetchSupabaseReports(); }
     };
   </script>
 </body>

@@ -10,8 +10,12 @@
   <script src="https://unpkg.com/@supabase/supabase-js@2"></script>
 
   <style>
-    body { margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; }
-    #map { height: 100vh; width: 100%; }
+    /* Force full height */
+    html, body { height: 100%; margin: 0; padding: 0; }
+    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; }
+    
+    /* Map Container - Grey background to debug visibility */
+    #map { height: 100%; width: 100%; background-color: #e0e0e0; }
     
     /* Report Button */
     .report-btn {
@@ -96,68 +100,99 @@
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 
   <script>
+    // --- GLOBAL ERROR HANDLER ---
+    window.onerror = function(message, source, lineno, colno, error) {
+        alert("Error: " + message + "\nLine: " + lineno);
+    };
+
     // --- CONFIGURATION ---
     const SUPABASE_URL = 'https://vwyvlyawbwfzwfyjojsc.supabase.co';
     const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InZ3eXZseWF3YndmendmeWpvanNjIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Njg4NzI4MTIsImV4cCI6MjA4NDQ0ODgxMn0.I74HObejsbKGW3uy59iAw0W2crVMxuscuQOYSTdbbBA'; 
 
-    // Initialize Supabase
-    const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+    let map;
+    let supabase;
 
-    // Initialize Map
-    // Default view: Center of US
-    const map = L.map('map').setView([39.8283, -98.5795], 4);
+    // WAIT FOR PAGE LOAD BEFORE RUNNING
+    window.onload = function() {
+        try {
+            console.log("Initializing...");
 
-    L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png', {
-      attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OSM</a>',
-      maxZoom: 19
-    }).addTo(map);
+            // 1. Check if Libraries Loaded
+            if (typeof L === 'undefined') throw new Error("Leaflet Map library failed to load.");
+            if (typeof window.supabase === 'undefined') throw new Error("Supabase library failed to load.");
 
-    // Locate User on Load
-    map.locate({setView: true, maxZoom: 15});
-    
-    map.on('locationfound', (e) => {
-      L.marker(e.latlng).addTo(map).bindPopup("You are here").openPopup();
-      window.userLocation = e.latlng; 
-    });
+            // 2. Initialize Supabase
+            supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
 
-    map.on('locationerror', (e) => {
-      console.log("Location access denied or failed.");
-    });
+            // 3. Initialize Map
+            map = L.map('map').setView([39.8283, -98.5795], 4);
+
+            // Use Standard OpenStreetMap Tiles (More reliable than Carto)
+            L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
+                maxZoom: 19,
+                attribution: '&copy; <a href="http://www.openstreetmap.org/copyright">OSM</a>'
+            }).addTo(map);
+
+            // 4. Locate User
+            map.locate({setView: true, maxZoom: 15});
+            
+            map.on('locationfound', (e) => {
+                L.marker(e.latlng).addTo(map).bindPopup("You are here").openPopup();
+                window.userLocation = e.latlng; 
+            });
+
+            map.on('locationerror', (e) => {
+                console.warn("Location access denied.");
+            });
+
+            // 5. Load Reports
+            loadReports();
+
+        } catch (err) {
+            alert("Startup Error: " + err.message);
+            console.error(err);
+        }
+    };
 
     // --- FUNCTIONS ---
 
-    // 1. Load Existing Reports
     async function loadReports() {
-      const { data, error } = await supabase
-        .from('reports')
-        .select('*')
-        .order('created_at', { ascending: false })
-        .limit(100); 
+      try {
+          const { data, error } = await supabase
+            .from('reports')
+            .select('*')
+            .order('created_at', { ascending: false })
+            .limit(100); 
 
-      if (error) console.error('Error loading reports:', error);
-      
-      if (data) {
-        data.forEach(report => {
-          let color = 'green';
-          if(report.status === 'Low') color = 'orange';
-          if(report.status === 'Out of Stock') color = 'red';
+          if (error) {
+              console.error('Database Error:', error);
+              return;
+          }
+          
+          if (data) {
+            data.forEach(report => {
+              let color = 'green';
+              if(report.status === 'Low') color = 'orange';
+              if(report.status === 'Out of Stock') color = 'red';
 
-          L.circleMarker([report.lat, report.lng], {
-            color: color,
-            fillColor: color,
-            fillOpacity: 0.8,
-            radius: 8
-          }).addTo(map).bindPopup(`
-            <b>${report.store_name}</b><br>
-            ${report.flavor}<br>
-            <b>${report.status}</b><br>
-            <small>${new Date(report.created_at).toLocaleDateString()}</small>
-          `);
-        });
+              L.circleMarker([report.lat, report.lng], {
+                color: color,
+                fillColor: color,
+                fillOpacity: 0.8,
+                radius: 8
+              }).addTo(map).bindPopup(`
+                <b>${report.store_name}</b><br>
+                ${report.flavor}<br>
+                <b>${report.status}</b><br>
+                <small>${new Date(report.created_at).toLocaleDateString()}</small>
+              `);
+            });
+          }
+      } catch (err) {
+          console.error("Load Reports Failed:", err);
       }
     }
 
-    // 2. Handle Reporting
     function startReport() {
       if (!window.userLocation) {
         alert("We need your location to mark the map! Please allow location access.");
@@ -199,10 +234,6 @@
         loadReports(); // Refresh map
       }
     }
-
-    // Load reports on startup
-    loadReports();
-
   </script>
 </body>
 </html>

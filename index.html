@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
-  <title>Red Bull Finder - v10 Fast</title>
+  <title>Red Bull Finder - v11 Photon</title>
   
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.css" />
   <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.js"></script>
@@ -95,115 +95,107 @@
     var DB_URL = 'https://vwyvlyawbwfzwfyjojsc.supabase.co';
     var DB_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InZ3eXZseWF3YndmendmeWpvanNjIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Njg4NzI4MTIsImV4cCI6MjA4NDQ0ODgxMn0.I74HObejsbKGW3uy59iAw0W2crVMxuscuQOYSTdbbBA';
 
-    var OSM_SERVERS = [
-        "https://overpass-api.de/api/interpreter", 
-        "https://overpass.kumi.systems/api/interpreter"
-    ];
+    // BRANDS TO SCAN FOR
+    var BRANDS = ["7-Eleven", "QuikTrip", "CVS", "Walmart", "Walgreens", "Target", "Hy-Vee", "Casey's"];
+    var storesFound = 0;
 
     window.onload = function() {
         appSupabase = window.supabase.createClient(DB_URL, DB_KEY);
         loadFlavors();
-        appMap = L.map('map').setView([39.09, -94.58], 12); // Default to KC
+        appMap = L.map('map').setView([39.09, -94.58], 12);
         L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png', { maxZoom: 19 }).addTo(appMap);
     };
 
     window.startApp = function() {
         document.getElementById('welcome-screen').style.display = 'none';
         document.getElementById('mainReportBtn').style.display = 'block';
-        statusEl.innerText = "Requesting Location (8s timeout)...";
+        statusEl.innerText = "Locating...";
         
-        // --- NEW SAFETY FEATURE: TIMEOUT ---
-        appMap.locate({
-            setView: true, 
-            maxZoom: 14, 
-            timeout: 8000, // Stop waiting after 8 seconds
-            enableHighAccuracy: false // Faster
-        });
+        // 8-second Timeout on GPS
+        appMap.locate({ setView: true, maxZoom: 13, timeout: 8000, enableHighAccuracy: false });
     };
 
     setTimeout(() => {
         if(appMap) {
             appMap.on('locationfound', function(e) {
                 userPos = e.latlng;
-                statusEl.innerText = "Location Found! Loading stores...";
+                statusEl.innerText = "Location Found! Scanning brands...";
                 L.marker(e.latlng).addTo(appMap).bindPopup("You are here").openPopup();
-                fetchWithRetry(e.latitude, e.longitude, 0);
+                
+                // START SCANNING
+                scanAllBrands(e.latitude, e.longitude);
                 fetchSupabaseReports();
             });
 
-            // If GPS fails or times out, this runs automatically:
             appMap.on('locationerror', function(e) {
-                statusEl.innerText = "GPS Timeout. Showing Kansas City defaults.";
-                console.log("GPS Failed: ", e.message);
+                statusEl.innerText = "GPS Timeout. Using Default Location.";
                 
-                // FALLBACK: Default to Kansas City (Mission Hills area)
-                var fallbackLat = 39.02;
+                // Fallback to Kansas City
+                var fallbackLat = 39.05;
                 var fallbackLng = -94.60;
                 
                 appMap.setView([fallbackLat, fallbackLng], 13);
-                userPos = { lat: fallbackLat, lng: fallbackLng }; // Fake user location so app still works
+                userPos = { lat: fallbackLat, lng: fallbackLng };
                 
-                fetchWithRetry(fallbackLat, fallbackLng, 0);
+                scanAllBrands(fallbackLat, fallbackLng);
                 fetchSupabaseReports();
             });
         }
     }, 1000);
 
-    // --- RETRY SYSTEM ---
-    async function fetchWithRetry(lat, lng, serverIndex) {
-        if (serverIndex >= OSM_SERVERS.length) {
-            statusEl.innerText = "Servers busy. Try zooming/moving map.";
-            return;
-        }
-
-        var serverUrl = OSM_SERVERS[serverIndex];
-        statusEl.innerText = "Checking stores (Server " + (serverIndex + 1) + ")...";
-
-        // Query: 5km Radius
-        var query = `
-            [out:json][timeout:15];
-            (
-              node["name"~"7-Eleven|CVS|Walmart|QuikTrip|Walgreens|Target|Costco|Casey's|Hy-Vee|Dollar General", i]
-              (around:5000, ${lat}, ${lng});
-            );
-            out body;
-        `;
+    // --- NEW: PHOTON API (SEARCH ENGINE) ---
+    async function scanAllBrands(lat, lng) {
+        storesFound = 0;
         
-        var fullUrl = serverUrl + "?data=" + encodeURIComponent(query);
-
-        try {
-            var response = await fetch(fullUrl);
-            if (!response.ok) throw new Error("Busy");
-            var data = await response.json();
-            
-            if(data.elements && data.elements.length > 0) {
-                statusEl.innerText = "Success! " + data.elements.length + " stores nearby.";
-                drawStores(data.elements);
-            } else {
-                statusEl.innerText = "No stores found nearby.";
-            }
-
-        } catch (err) {
-            fetchWithRetry(lat, lng, serverIndex + 1);
+        // Search for each brand individually to ensure we get results
+        for (let brand of BRANDS) {
+            await fetchBrand(brand, lat, lng);
+        }
+        
+        if (storesFound === 0) {
+            statusEl.innerText = "No stores found. Try searching a different area?";
+        } else {
+            statusEl.innerText = "Scan Complete. Found " + storesFound + " stores.";
         }
     }
 
-    function drawStores(stores) {
-        stores.forEach(store => {
-            if(store.lat && store.lon) {
-                var sName = store.tags.name || "Store";
-                var marker = L.circleMarker([store.lat, store.lon], {
-                    color: '#666', fillColor: '#bbb', fillOpacity: 0.5, radius: 6, weight: 1
-                }).addTo(appMap);
+    async function fetchBrand(brandName, lat, lng) {
+        statusEl.innerText = "Searching for " + brandName + "...";
+        
+        // Photon API query
+        var url = `https://photon.komoot.io/api/?q=${encodeURIComponent(brandName)}&lat=${lat}&lon=${lng}&limit=10`;
 
-                marker.bindPopup(`
-                    <b>${sName}</b><br>
-                    <button onclick="reportFromPin('${sName.replace(/'/g, "\\'")}', ${store.lat}, ${store.lon})">
-                        Report Stock Here
-                    </button>
-                `);
+        try {
+            var response = await fetch(url);
+            var data = await response.json();
+            
+            if (data.features && data.features.length > 0) {
+                data.features.forEach(feature => {
+                    var coords = feature.geometry.coordinates; // [lon, lat]
+                    var sLat = coords[1];
+                    var sLng = coords[0];
+                    var sName = feature.properties.name || brandName;
+                    
+                    // Simple Deduplication (rough check)
+                    storesFound++;
+                    
+                    // Add Grey Pin
+                    var marker = L.circleMarker([sLat, sLng], {
+                        color: '#555', fillColor: '#ccc', fillOpacity: 0.6, radius: 6, weight: 1
+                    }).addTo(appMap);
+
+                    marker.bindPopup(`
+                        <b>${sName}</b><br>
+                        <small>${feature.properties.street || ""}</small><br>
+                        <button onclick="reportFromPin('${sName.replace(/'/g, "\\'")}', ${sLat}, ${sLng})">
+                            Report Stock Here
+                        </button>
+                    `);
+                });
             }
-        });
+        } catch (err) {
+            console.error("Photon Error for " + brandName, err);
+        }
     }
 
     async function fetchSupabaseReports() {
@@ -233,7 +225,6 @@
 
     // --- UI HELPERS ---
     window.openReportModal = function() {
-        // Allow reporting even if GPS failed (uses center of map or fallback)
         if (!userPos) userPos = appMap.getCenter();
         document.getElementById('storeName').value = "";
         selectedStoreCoords = userPos; 

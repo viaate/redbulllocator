@@ -3,62 +3,122 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
-  <title>Red Bull Finder - Multi-Report</title>
+  <title>Red Bull Finder - Themed</title>
   
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.css" />
   <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 
   <style>
-    /* MOBILE FIRST DESIGN */
-    html, body { height: 100%; margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: #1a1a1a; }
+    /* --- RED BULL THEME & BASE STYLES --- */
+    :root {
+      --rb-navy: #06112a;
+      --rb-blue: #1f305e;
+      --rb-red: #d7003a;
+      --rb-silver: #e1e1e5;
+      --rb-yellow: #f0c100;
+    }
+
+    html, body { 
+        height: 100%; margin: 0; padding: 0; 
+        font-family: 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; 
+        background-color: var(--rb-navy);
+    }
+
     #map { height: 100%; width: 100%; z-index: 1; }
 
     /* SEARCH BAR */
     .search-container {
       position: absolute; top: 20px; left: 50%; transform: translateX(-50%);
-      width: 90%; max-width: 400px; z-index: 2000; display: flex; gap: 8px;
+      width: 90%; max-width: 450px; z-index: 2000; display: flex; gap: 8px;
+      background: rgba(6, 17, 42, 0.85); padding: 8px; border-radius: 60px;
+      backdrop-filter: blur(4px); border: 1px solid var(--rb-blue);
     }
     .search-input {
-      flex: 1; padding: 12px 16px; font-size: 16px; border: none;
-      border-radius: 50px; box-shadow: 0 4px 12px rgba(0,0,0,0.3); outline: none;
+      flex: 1; padding: 12px 20px; font-size: 16px; border: none;
+      border-radius: 50px; outline: none; background: #fff; color: #333;
     }
     .search-btn {
-      background: #1f305e; color: white; border: none; padding: 0 20px;
-      border-radius: 50px; font-weight: bold; box-shadow: 0 4px 12px rgba(0,0,0,0.3);
-      cursor: pointer;
+      background: var(--rb-red); color: white; border: none; padding: 0 25px;
+      border-radius: 50px; font-weight: 800; letter-spacing: 0.5px;
+      cursor: pointer; text-transform: uppercase;
     }
 
     /* STATUS PILL */
     #status-pill {
-      position: absolute; top: 75px; left: 50%; transform: translateX(-50%);
-      background: rgba(0,0,0,0.8); color: #00ff41; padding: 6px 16px;
-      border-radius: 20px; font-size: 12px; font-weight: bold; pointer-events: none;
-      z-index: 1999; display: none; white-space: nowrap;
+      position: absolute; top: 90px; left: 50%; transform: translateX(-50%);
+      background: var(--rb-yellow); color: var(--rb-navy); 
+      padding: 8px 20px; border-radius: 20px; font-size: 13px; font-weight: 900; 
+      pointer-events: none; z-index: 1999; display: none; 
+      box-shadow: 0 4px 15px rgba(0,0,0,0.5); text-transform: uppercase;
     }
 
-    /* POPUP STYLING (For multiple items) */
-    .leaflet-popup-content { margin: 10px !important; width: 260px !important; }
-    .report-list { max-height: 150px; overflow-y: auto; margin-top: 5px; border-top: 1px solid #eee; }
-    .report-item { padding: 6px 0; border-bottom: 1px solid #f0f0f0; font-size: 13px; }
+    /* POPUP STYLING (The List) */
+    .leaflet-popup-content-wrapper { border-radius: 12px; padding: 0; overflow: hidden; }
+    .leaflet-popup-content { margin: 0 !important; width: 280px !important; }
+    
+    .popup-header {
+        background: var(--rb-navy); color: white; padding: 12px; text-align: center;
+    }
+    .popup-header b { font-size: 16px; display: block; }
+    .popup-header small { color: var(--rb-silver); font-size: 11px; }
+
+    .report-list { 
+        max-height: 180px; overflow-y: auto; background: white; 
+    }
+    .report-item { 
+        padding: 12px 15px; border-bottom: 1px solid #eee; font-size: 14px; 
+        display: flex; align-items: center; gap: 10px;
+    }
     .report-item:last-child { border-bottom: none; }
+    
+    .add-btn {
+        width: 100%; padding: 12px; background: var(--rb-silver); 
+        color: var(--rb-navy); border: none; font-weight: bold; cursor: pointer;
+        border-top: 1px solid #ccc; font-size: 13px;
+    }
 
     /* MODAL */
-    .modal { display: none; position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); width: 90%; max-width: 350px; background: white; padding: 25px; border-radius: 16px; z-index: 3000; box-shadow: 0 20px 50px rgba(0,0,0,0.5); }
-    .modal h3 { margin-top: 0; color: #1f305e; font-size: 22px; }
-    .form-group { margin-bottom: 15px; }
-    label { font-weight: bold; display: block; margin-bottom: 6px; font-size: 14px; color: #555; }
-    input, select { width: 100%; padding: 12px; border: 2px solid #eee; border-radius: 8px; font-size: 16px; box-sizing: border-box; background: #f9f9f9; }
-    .btn-submit { background: #1f305e; color: white; width: 100%; padding: 14px; border: none; border-radius: 8px; font-weight: bold; font-size: 16px; margin-top: 10px; }
-    .btn-cancel { background: white; color: #777; width: 100%; padding: 14px; border: none; margin-top: 5px; font-size: 14px; }
-    .overlay { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.6); z-index: 2500; backdrop-filter: blur(2px); }
+    .modal { display: none; position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); width: 90%; max-width: 350px; background: white; padding: 25px; border-radius: 16px; z-index: 3000; box-shadow: 0 25px 60px rgba(0,0,0,0.7); }
+    .modal h3 { margin-top: 0; color: var(--rb-navy); font-size: 24px; text-align: center; text-transform: uppercase; letter-spacing: 1px; }
+    .form-group { margin-bottom: 20px; }
+    label { font-weight: bold; display: block; margin-bottom: 8px; font-size: 14px; color: #666; text-transform: uppercase; }
+    input, select { width: 100%; padding: 14px; border: 2px solid #ddd; border-radius: 8px; font-size: 16px; box-sizing: border-box; background: #fdfdfd; }
+    
+    .btn-submit { background: var(--rb-red); color: white; width: 100%; padding: 16px; border: none; border-radius: 8px; font-weight: bold; font-size: 18px; margin-top: 10px; cursor: pointer; }
+    .btn-cancel { background: white; color: #888; width: 100%; padding: 14px; border: none; margin-top: 5px; font-size: 14px; cursor: pointer; }
+    
+    .overlay { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(6, 17, 42, 0.8); z-index: 2500; backdrop-filter: blur(3px); }
+
+    /* --- MOBILE SPECIFIC TWEAKS --- */
+    @media (max-width: 600px) {
+        /* Bigger Search Bar */
+        .search-container { width: 95%; top: 15px; padding: 6px; }
+        .search-input { font-size: 18px; padding: 14px; }
+        .search-btn { padding: 0 20px; font-size: 14px; }
+
+        /* Bigger Popup Text */
+        .leaflet-popup-content { width: 300px !important; }
+        .popup-header b { font-size: 18px; }
+        .report-item { font-size: 16px; padding: 15px; }
+        .add-btn { padding: 16px; font-size: 15px; }
+
+        /* Bigger Modal Inputs */
+        .modal { width: 95%; padding: 20px; }
+        label { font-size: 14px; margin-bottom: 10px; }
+        input, select { padding: 16px; font-size: 18px; } /* Prevents zoom on tap */
+        .btn-submit { padding: 18px; font-size: 20px; }
+        
+        /* Lower the zoom controls so they don't block the search bar */
+        .leaflet-control-zoom { margin-bottom: 80px !important; }
+    }
   </style>
 </head>
 <body>
 
   <div class="search-container">
     <input type="number" id="zipInput" class="search-input" placeholder="Zip Code (e.g. 66208)" inputmode="numeric">
-    <button class="search-btn" onclick="handleZipSearch()">GO</button>
+    <button class="search-btn" onclick="handleZipSearch()">SEARCH</button>
   </div>
 
   <div id="status-pill">Ready</div>
@@ -67,7 +127,7 @@
 
   <div class="modal" id="reportModal">
     <h3>Report Stock</h3>
-    <div class="form-group"><label>Store Name</label><input type="text" id="storeName" readonly style="background:#eee; color:#555;" /></div>
+    <div class="form-group"><label>Store</label><input type="text" id="storeName" readonly style="background:#eee; color:#555;" /></div>
     <div class="form-group"><label>Flavor</label><select id="flavor"><option>Loading...</option></select></div>
     <div class="form-group">
       <label>Status</label>
@@ -77,7 +137,7 @@
         <option value="Out of Stock">🔴 Out of Stock</option>
       </select>
     </div>
-    <button class="btn-submit" onclick="submitReport()">Submit Report</button>
+    <button class="btn-submit" onclick="submitReport()">SUBMIT</button>
     <button class="btn-cancel" onclick="closeModal()">Cancel</button>
   </div>
 
@@ -94,6 +154,9 @@
         "gas station", "convenience shop", "supermarket", "grocery"
     ];
 
+    // UPDATED ZOOM LEVEL: 14 (Closer for mobile)
+    var DEFAULT_ZOOM = 14; 
+
     var DB_URL = 'https://vwyvlyawbwfzwfyjojsc.supabase.co';
     var DB_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InZ3eXZseWF3YndmendmeWpvanNjIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Njg4NzI4MTIsImV4cCI6MjA4NDQ0ODgxMn0.I74HObejsbKGW3uy59iAw0W2crVMxuscuQOYSTdbbBA';
 
@@ -101,9 +164,13 @@
         appSupabase = window.supabase.createClient(DB_URL, DB_KEY);
         loadFlavors();
         
-        // Default View: Kansas City
-        appMap = L.map('map', { zoomControl: false }).setView([39.05, -94.60], 13);
-        L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png', { maxZoom: 19 }).addTo(appMap);
+        // Use CartoDB Light (Voyager) but we will start zoomed in
+        appMap = L.map('map', { zoomControl: false }).setView([39.05, -94.60], DEFAULT_ZOOM);
+        
+        L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png', { 
+            maxZoom: 19, attribution: '© OSM' 
+        }).addTo(appMap);
+        
         L.control.zoom({ position: 'bottomleft' }).addTo(appMap);
 
         scanArea(39.05, -94.60);
@@ -113,7 +180,7 @@
     async function handleZipSearch() {
         var zip = document.getElementById('zipInput').value;
         if(zip.length < 5) return alert("Enter 5-digit zip.");
-        setStatus("Finding Zip...");
+        setStatus("Locating...");
         try {
             var url = `https://nominatim.openstreetmap.org/search?postalcode=${zip}&country=USA&format=json`;
             var res = await fetch(url);
@@ -121,7 +188,8 @@
             if(data && data.length > 0) {
                 var lat = parseFloat(data[0].lat);
                 var lon = parseFloat(data[0].lon);
-                appMap.flyTo([lat, lon], 14, { duration: 1.5 });
+                // Fly to Zoom 15 (Very Close)
+                appMap.flyTo([lat, lon], 15, { duration: 1.5 });
                 setTimeout(() => { scanArea(lat, lon); }, 1600);
             } else { alert("Zip not found!"); }
         } catch(e) { console.error(e); alert("Search failed."); }
@@ -133,7 +201,7 @@
         seenStoreIds.clear(); 
         for (let term of SEARCH_TERMS) { await fetchPhoton(term, lat, lng); }
         if(storesFoundCount === 0) setStatus("No stores found.");
-        else setStatus("Done! Found " + storesFoundCount + " stores.");
+        else setStatus("Found " + storesFoundCount + " stores.");
     }
 
     async function fetchPhoton(term, lat, lng) {
@@ -152,15 +220,18 @@
                     storesFoundCount++;
                     
                     var marker = L.circleMarker([sLat, sLng], {
-                        color: '#555', fillColor: '#ccc', fillOpacity: 0.6, radius: 6, weight: 1
+                        color: '#666', fillColor: '#ddd', fillOpacity: 0.8, radius: 7, weight: 1
                     }).addTo(appMap);
 
+                    // THEMED POPUP BUTTON
                     marker.bindPopup(`
-                        <div style="text-align:center">
-                            <b>${sName}</b><br>
-                            <small>${feature.properties.street || ""}</small><br>
-                            <button style="margin-top:8px; padding:6px 12px; background:#1f305e; color:white; border:none; border-radius:4px; cursor:pointer;" 
-                            onclick="reportFromPin('${sName.replace(/'/g, "\\'")}', ${sLat}, ${sLng})">Report Stock</button>
+                        <div style="text-align:center; padding:10px;">
+                            <b style="font-size:16px; color:#1f305e">${sName}</b><br>
+                            <small style="color:#888">${feature.properties.street || ""}</small><br>
+                            <button style="margin-top:10px; padding:10px 20px; background:#d7003a; color:white; border:none; border-radius:30px; cursor:pointer; font-weight:bold;" 
+                            onclick="reportFromPin('${sName.replace(/'/g, "\\'")}', ${sLat}, ${sLng})">
+                                REPORT STOCK
+                            </button>
                         </div>
                     `);
                 });
@@ -174,22 +245,18 @@
         setTimeout(() => { statusEl.style.display = 'none'; }, 4000);
     }
 
-    // --- NEW: FETCH REPORTS WITH GROUPING & 7-DAY FILTER ---
     async function fetchSupabaseReports() {
-        // 1. Calculate Date 7 Days Ago
         var sevenDaysAgo = new Date();
         sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
         var isoDate = sevenDaysAgo.toISOString();
 
-        // 2. Fetch data (filtering out old stuff)
         const { data } = await appSupabase
             .from('reports')
             .select('*')
-            .gte('created_at', isoDate) // Only get recent
+            .gte('created_at', isoDate)
             .order('created_at', { ascending: false });
         
         if (data && data.length > 0) {
-            // 3. Group by Location (Lat,Lng)
             var groups = {};
             data.forEach(r => {
                 var key = r.lat.toFixed(5) + "," + r.lng.toFixed(5);
@@ -197,38 +264,39 @@
                 groups[key].reports.push(r);
             });
 
-            // 4. Draw ONE pin per store location
             Object.values(groups).forEach(store => {
-                // Determine Pin Color (Green if any 'In Stock', else Red)
                 var anyInStock = store.reports.some(r => r.status === 'In Stock');
                 var color = anyInStock ? '#28a745' : '#d7003a';
 
-                // Build Scrollable List HTML
                 var listHtml = `<div class="report-list">`;
                 store.reports.forEach(r => {
                     var time = new Date(r.created_at).toLocaleDateString(undefined, {month:'short', day:'numeric'}) + 
-                               " " + new Date(r.created_at).toLocaleTimeString(undefined, {hour:'2-digit', minute:'2-digit'});
+                               " " + new Date(r.created_at).toLocaleTimeString(undefined, {hour:'numeric', minute:'2-digit'});
                     var dotColor = r.status === 'In Stock' ? 'green' : (r.status === 'Low' ? 'orange' : 'red');
                     
                     listHtml += `
                         <div class="report-item">
-                            <span style="color:${dotColor}">●</span> <b>${r.flavor}</b>: ${r.status}<br>
-                            <small style="color:#888">${time}</small>
+                            <span style="font-size:20px; color:${dotColor}; line-height:0;">●</span> 
+                            <div style="flex:1">
+                                <b>${r.flavor}</b><br>
+                                <span style="color:#555">${r.status}</span> <span style="color:#aaa; font-size:12px;">• ${time}</span>
+                            </div>
                         </div>`;
                 });
                 listHtml += `</div>`;
 
                 L.circleMarker([store.lat, store.lng], {
-                    color: 'white', fillColor: color, fillOpacity: 1, radius: 10, weight: 2
+                    color: 'white', fillColor: color, fillOpacity: 1, radius: 11, weight: 3
                 }).addTo(appMap).bindPopup(`
-                    <div style="text-align:center">
+                    <div class="popup-header">
                         <b>${store.name}</b>
-                        ${listHtml}
-                        <button style="margin-top:8px; padding:4px 10px; background:#1f305e; color:white; border:none; border-radius:4px; cursor:pointer; font-size:11px;" 
-                            onclick="reportFromPin('${store.name.replace(/'/g, "\\'")}', ${store.lat}, ${store.lng})">
-                                + Add Another Report
-                        </button>
+                        <small>RECENT REPORTS</small>
                     </div>
+                    ${listHtml}
+                    <button class="add-btn" 
+                        onclick="reportFromPin('${store.name.replace(/'/g, "\\'")}', ${store.lat}, ${store.lng})">
+                            + ADD REPORT
+                    </button>
                 `);
             });
         }
@@ -247,7 +315,6 @@
         }
     }
 
-    // --- UI HELPERS ---
     window.reportFromPin = function(name, lat, lng) {
         document.getElementById('storeName').value = name;
         selectedStoreCoords = { lat: lat, lng: lng }; 

@@ -3,63 +3,97 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
-  <title>Red Bull Finder - v12 Instant</title>
+  <title>Red Bull Finder - Zip Search</title>
   
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.css" />
   <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 
   <style>
-    /* Reset */
-    html, body { height: 100%; margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
-    #map { height: 100%; width: 100%; background-color: #333; z-index: 1; }
+    /* MOBILE FIRST DESIGN */
+    html, body { height: 100%; margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: #1a1a1a; }
+    
+    /* Map Container */
+    #map { height: 100%; width: 100%; z-index: 1; }
 
-    /* STATUS BAR */
-    #status-bar {
-        position: fixed; bottom: 0; left: 0; width: 100%;
-        background: rgba(0,0,0,0.9); color: #00ff41;
-        padding: 8px; font-size: 13px; z-index: 9000;
-        text-align: center; font-family: monospace; border-top: 1px solid #00ff41;
+    /* SEARCH BAR (Top Floating) */
+    .search-container {
+      position: absolute; top: 20px; left: 50%; transform: translateX(-50%);
+      width: 90%; max-width: 400px; z-index: 2000;
+      display: flex; gap: 8px;
+    }
+    .search-input {
+      flex: 1; padding: 12px 16px; font-size: 16px; border: none;
+      border-radius: 50px; box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+      outline: none;
+    }
+    .search-btn {
+      background: #1f305e; color: white; border: none;
+      padding: 0 20px; border-radius: 50px; font-weight: bold;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.3); cursor: pointer;
     }
 
-    /* Floating Report Button */
-    .report-btn {
-      position: absolute; bottom: 50px; right: 20px; z-index: 2000;
+    /* STATUS PILL (Floating below search) */
+    #status-pill {
+      position: absolute; top: 75px; left: 50%; transform: translateX(-50%);
+      background: rgba(0,0,0,0.8); color: #00ff41;
+      padding: 6px 16px; border-radius: 20px; font-size: 12px;
+      font-weight: bold; pointer-events: none; z-index: 1999;
+      display: none; white-space: nowrap;
+    }
+
+    /* BIG ACTION BUTTON (Bottom Right) */
+    .fab-btn {
+      position: absolute; bottom: 30px; right: 20px; z-index: 2000;
       background-color: #d7003a; color: white; border: none;
-      padding: 15px 25px; border-radius: 50px; font-size: 16px;
-      font-weight: bold; box-shadow: 0 4px 6px rgba(0,0,0,0.3);
-      cursor: pointer;
+      width: 60px; height: 60px; border-radius: 50%;
+      font-size: 30px; box-shadow: 0 4px 10px rgba(0,0,0,0.4);
+      cursor: pointer; display: flex; align-items: center; justify-content: center;
     }
 
-    /* GPS Button (Top Left) */
-    .gps-btn {
-      position: absolute; top: 80px; left: 10px; z-index: 2000;
-      background: white; border: 2px solid #ccc; width: 40px; height: 40px;
-      border-radius: 8px; cursor: pointer; display: flex; align-items: center; justify-content: center;
-      font-size: 20px; box-shadow: 0 2px 5px rgba(0,0,0,0.2);
-    }
+    /* MODAL (Phone Friendly) */
+    .modal { display: none; position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); width: 90%; max-width: 350px; background: white; padding: 25px; border-radius: 16px; z-index: 3000; box-shadow: 0 20px 50px rgba(0,0,0,0.5); }
+    .modal h3 { margin-top: 0; color: #1f305e; font-size: 22px; }
+    .form-group { margin-bottom: 15px; }
+    label { font-weight: bold; display: block; margin-bottom: 6px; font-size: 14px; color: #555; }
+    input, select { width: 100%; padding: 12px; border: 2px solid #eee; border-radius: 8px; font-size: 16px; box-sizing: border-box; background: #f9f9f9; }
+    
+    .btn-submit { background: #1f305e; color: white; width: 100%; padding: 14px; border: none; border-radius: 8px; font-weight: bold; font-size: 16px; margin-top: 10px; }
+    .btn-cancel { background: white; color: #777; width: 100%; padding: 14px; border: none; margin-top: 5px; font-size: 14px; }
 
-    /* Modal */
-    .modal { display: none; position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); width: 85%; max-width: 320px; background: white; padding: 20px; border-radius: 12px; z-index: 3000; box-shadow: 0 10px 25px rgba(0,0,0,0.5); }
-    .form-group { margin-bottom: 12px; }
-    label { font-weight: bold; display: block; margin-bottom: 4px; font-size: 12px; }
-    input, select { width: 100%; padding: 8px; box-sizing: border-box; border: 1px solid #ccc; border-radius: 4px; }
-    .overlay { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.4); z-index: 2500; }
+    .overlay { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.6); z-index: 2500; backdrop-filter: blur(2px); }
   </style>
 </head>
 <body>
 
-  <div id="status-bar">Initializing...</div>
+  <div class="search-container">
+    <input type="number" id="zipInput" class="search-input" placeholder="Enter Zip Code (e.g. 66208)" inputmode="numeric">
+    <button class="search-btn" onclick="handleZipSearch()">GO</button>
+  </div>
+
+  <div id="status-pill">Ready</div>
 
   <div id="map"></div>
-  <button class="gps-btn" onclick="tryGPS()" title="Locate Me">📍</button>
-  <button id="mainReportBtn" class="report-btn" onclick="openReportModal()">+ Manual Report</button>
+
+  <button class="fab-btn" onclick="openReportModal()" title="Add Report">+</button>
+
   <div class="overlay" id="overlay" onclick="closeModal()"></div>
 
   <div class="modal" id="reportModal">
-    <h3 style="margin-top:0; color:#1f305e;">Report Stock</h3>
-    <div class="form-group"><label>Store Name</label><input type="text" id="storeName" placeholder="e.g. 7-Eleven" /></div>
-    <div class="form-group"><label>Flavor</label><select id="flavor"><option>Loading...</option></select></div>
+    <h3>Report Stock</h3>
+    
+    <div class="form-group">
+      <label>Store Name</label>
+      <input type="text" id="storeName" placeholder="Where are you?" />
+    </div>
+
+    <div class="form-group">
+      <label>Flavor</label>
+      <select id="flavor">
+        <option>Loading...</option>
+      </select>
+    </div>
+
     <div class="form-group">
       <label>Status</label>
       <select id="status">
@@ -68,18 +102,16 @@
         <option value="Out of Stock">🔴 Out of Stock</option>
       </select>
     </div>
-    <button onclick="submitReport()" style="background:#1f305e; color:white; width:100%; padding:10px; border:none; border-radius:6px; font-weight:bold;">Submit</button>
-    <button onclick="closeModal()" style="background:#eee; color:#333; width:100%; padding:10px; border:none; border-radius:6px; margin-top:8px;">Cancel</button>
+
+    <button class="btn-submit" onclick="submitReport()">Submit Report</button>
+    <button class="btn-cancel" onclick="closeModal()">Cancel</button>
   </div>
 
   <script>
     var appMap = null;
     var appSupabase = null;
-    var userPos = { lat: 39.022, lng: -94.613 }; // DEFAULT: Mission Hills, KC
     var selectedStoreCoords = null; 
-    var statusEl = document.getElementById('status-bar');
-    var BRANDS = ["7-Eleven", "QuikTrip", "CVS", "Walmart", "Walgreens", "Target", "Hy-Vee", "Casey's"];
-    var storesFound = 0;
+    var statusEl = document.getElementById('status-pill');
 
     var DB_URL = 'https://vwyvlyawbwfzwfyjojsc.supabase.co';
     var DB_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InZ3eXZseWF3YndmendmeWpvanNjIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Njg4NzI4MTIsImV4cCI6MjA4NDQ0ODgxMn0.I74HObejsbKGW3uy59iAw0W2crVMxuscuQOYSTdbbBA';
@@ -88,90 +120,114 @@
         appSupabase = window.supabase.createClient(DB_URL, DB_KEY);
         loadFlavors();
         
-        // 1. Load Map Immediately (KC Center)
-        appMap = L.map('map').setView([userPos.lat, userPos.lng], 13);
+        // Default View: Kansas City (Zoomed out slightly)
+        appMap = L.map('map', { zoomControl: false }).setView([39.05, -94.60], 12);
         L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png', { maxZoom: 19 }).addTo(appMap);
-
-        // 2. Start Scanning Immediately (Don't wait for GPS)
-        statusEl.innerText = "Map Loaded. Scanning for stores...";
-        scanAllBrands(userPos.lat, userPos.lng);
-        fetchSupabaseReports();
-
-        // 3. Listen for map movement (Auto-scan when user drags map)
-        appMap.on('moveend', function() {
-            var center = appMap.getCenter();
-            // Optional: Re-scan if they moved far? 
-            // For now, let's keep it manual or simple.
-        });
-    };
-
-    // --- MANUAL GPS TRIGGER ---
-    window.tryGPS = function() {
-        statusEl.innerText = "Requesting GPS...";
-        appMap.locate({ setView: true, maxZoom: 14, timeout: 5000 });
-    };
-
-    // Attach GPS listeners immediately (no timeout)
-    setTimeout(() => {
-        if(appMap) {
-            appMap.on('locationfound', function(e) {
-                userPos = e.latlng;
-                statusEl.innerText = "GPS Locked. Re-scanning...";
-                L.marker(e.latlng).addTo(appMap).bindPopup("You").openPopup();
-                scanAllBrands(e.latitude, e.longitude);
-            });
-            appMap.on('locationerror', function(e) {
-                statusEl.innerText = "GPS Failed. Using Map Center.";
-                alert("GPS failed. You can just scroll the map manually!");
-            });
-        }
-    }, 500);
-
-    // --- PHOTON API ---
-    async function scanAllBrands(lat, lng) {
-        // Clear status if we are retrying
-        if(storesFound === 0) statusEl.innerText = "Searching nearby...";
         
-        for (let brand of BRANDS) {
-            fetchBrand(brand, lat, lng);
+        // Add zoom control to bottom left (easier for thumbs)
+        L.control.zoom({ position: 'bottomleft' }).addTo(appMap);
+
+        // Initial Scan
+        scanArea(39.05, -94.60);
+        fetchSupabaseReports();
+    };
+
+    // --- ZIP CODE LOGIC ---
+    async function handleZipSearch() {
+        var zip = document.getElementById('zipInput').value;
+        if(zip.length < 5) return alert("Please enter a 5-digit zip code.");
+
+        setStatus("Searching Zip...");
+        
+        // 1. Geocode Zip to Lat/Lng (Using Nominatim)
+        try {
+            var url = `https://nominatim.openstreetmap.org/search?postalcode=${zip}&country=USA&format=json`;
+            var res = await fetch(url);
+            var data = await res.json();
+
+            if(data && data.length > 0) {
+                var lat = parseFloat(data[0].lat);
+                var lon = parseFloat(data[0].lon);
+
+                // 2. Fly to location
+                appMap.flyTo([lat, lon], 14, { duration: 1.5 });
+                setStatus("Found Zip. Scanning...");
+
+                // 3. Scan for stores after arrival
+                setTimeout(() => {
+                    scanArea(lat, lon);
+                }, 1500);
+            } else {
+                alert("Zip code not found!");
+                setStatus("Error");
+            }
+        } catch(e) {
+            console.error(e);
+            alert("Search failed. Try again.");
         }
     }
 
-    async function fetchBrand(brandName, lat, lng) {
-        // Photon API: Limit 15 results per brand
-        var url = `https://photon.komoot.io/api/?q=${encodeURIComponent(brandName)}&lat=${lat}&lon=${lng}&limit=15`;
+    // --- "THE CONVENIENCE SCANNER" (Fills the holes) ---
+    async function scanArea(lat, lng) {
+        // Query: "Give me nodes that are convenience stores OR supermarkets OR gas stations"
+        // Radius: 5000m (5km)
+        // We exclude nodes tagged "disused" or "abandoned"
+        var query = `
+            [out:json][timeout:25];
+            (
+              node["shop"~"convenience|supermarket"](around:5000, ${lat}, ${lng});
+              node["amenity"="fuel"](around:5000, ${lat}, ${lng});
+            );
+            (._; - node["disused"]; - node["abandoned"];);
+            out body;
+        `;
+
+        var url = "https://overpass-api.de/api/interpreter?data=" + encodeURIComponent(query);
 
         try {
             var response = await fetch(url);
             var data = await response.json();
             
-            if (data.features && data.features.length > 0) {
-                data.features.forEach(feature => {
-                    var coords = feature.geometry.coordinates; // [lon, lat]
-                    var sLat = coords[1];
-                    var sLng = coords[0];
-                    var sName = feature.properties.name || brandName;
-                    
-                    storesFound++;
-                    statusEl.innerText = "Found " + storesFound + " stores.";
+            if(data.elements && data.elements.length > 0) {
+                setStatus("Found " + data.elements.length + " stores nearby");
+                
+                data.elements.forEach(store => {
+                    var sLat = store.lat;
+                    var sLng = store.lon;
+                    var sName = store.tags.name || store.tags.brand || "Convenience Store";
 
-                    // Grey Pin
+                    // Grey Pin (Unverified)
                     var marker = L.circleMarker([sLat, sLng], {
-                        color: '#555', fillColor: '#ccc', fillOpacity: 0.6, radius: 6, weight: 1
+                        color: '#444', 
+                        fillColor: '#ddd', 
+                        fillOpacity: 0.6, 
+                        radius: 6, 
+                        weight: 1
                     }).addTo(appMap);
 
                     marker.bindPopup(`
-                        <b>${sName}</b><br>
-                        <small>${feature.properties.street || ""}</small><br>
-                        <button onclick="reportFromPin('${sName.replace(/'/g, "\\'")}', ${sLat}, ${sLng})">
-                            Report Stock Here
-                        </button>
+                        <div style="text-align:center">
+                            <b>${sName}</b><br>
+                            <button style="margin-top:8px; padding:6px 12px; background:#1f305e; color:white; border:none; border-radius:4px; cursor:pointer;" 
+                            onclick="reportFromPin('${sName.replace(/'/g, "\\'")}', ${sLat}, ${sLng})">
+                                Report Stock
+                            </button>
+                        </div>
                     `);
                 });
+            } else {
+                setStatus("No stores found in this area");
             }
         } catch (err) {
             console.error(err);
+            setStatus("Scan Error (Server Busy)");
         }
+    }
+
+    function setStatus(msg) {
+        statusEl.style.display = 'block';
+        statusEl.innerText = msg;
+        setTimeout(() => { statusEl.style.display = 'none'; }, 4000);
     }
 
     async function fetchSupabaseReports() {
@@ -179,8 +235,9 @@
         if (data) {
             data.forEach(function(r) {
                 var color = r.status === 'In Stock' ? '#28a745' : (r.status === 'Low' ? 'orange' : '#d7003a');
+                // Larger Colored Pin for Verified Reports
                 L.circleMarker([r.lat, r.lng], {
-                    color: color, fillColor: color, fillOpacity: 0.9, radius: 8, weight: 2
+                    color: 'white', fillColor: color, fillOpacity: 1, radius: 9, weight: 2
                 }).addTo(appMap).bindPopup(`<b>${r.store_name}</b><br>${r.flavor}<br><b>${r.status}</b>`);
             });
         }
@@ -199,10 +256,10 @@
         }
     }
 
+    // --- UI HELPERS ---
     window.openReportModal = function() {
-        if (!userPos) userPos = appMap.getCenter();
         document.getElementById('storeName').value = "";
-        selectedStoreCoords = userPos; 
+        selectedStoreCoords = appMap.getCenter(); // Default to center of map
         document.getElementById('reportModal').style.display = 'block';
         document.getElementById('overlay').style.display = 'block';
     };
@@ -221,8 +278,10 @@
         var sFlavor = document.getElementById('flavor').value;
         var sStatus = document.getElementById('status').value;
         if (!sName) return alert("Enter store name!");
-        var finalLat = selectedStoreCoords ? selectedStoreCoords.lat : userPos.lat;
-        var finalLng = selectedStoreCoords ? selectedStoreCoords.lng : userPos.lng;
+        
+        var finalLat = selectedStoreCoords.lat;
+        var finalLng = selectedStoreCoords.lng;
+
         const { error } = await appSupabase.from('reports').insert({ store_name: sName, flavor: sFlavor, status: sStatus, lat: finalLat, lng: finalLng });
         if (error) { alert("Failed."); } else { alert("Stock Updated!"); closeModal(); fetchSupabaseReports(); }
     };

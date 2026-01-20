@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
-  <title>Red Bull Finder - v7 Wide Net</title>
+  <title>Red Bull Finder - v8 Bulletproof</title>
   
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.css" />
   <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.js"></script>
@@ -16,12 +16,12 @@
     /* Map */
     #map { height: 100%; width: 100%; background-color: #333; z-index: 1; }
 
-    /* STATUS BAR (New!) */
+    /* STATUS BAR (Debug Info) */
     #status-bar {
         position: fixed; bottom: 0; left: 0; width: 100%;
-        background: rgba(0,0,0,0.8); color: white;
-        padding: 5px 10px; font-size: 12px; z-index: 9000;
-        text-align: center; font-family: monospace;
+        background: rgba(0,0,0,0.9); color: #00ff41;
+        padding: 8px; font-size: 13px; z-index: 9000;
+        text-align: center; font-family: monospace; border-top: 1px solid #00ff41;
     }
 
     /* WELCOME SCREEN */
@@ -42,7 +42,7 @@
 
     /* Floating Report Button */
     .report-btn {
-      position: absolute; bottom: 40px; right: 20px; z-index: 2000;
+      position: absolute; bottom: 50px; right: 20px; z-index: 2000;
       background-color: #d7003a; color: white; border: none;
       padding: 15px 25px; border-radius: 50px; font-size: 16px;
       font-weight: bold; box-shadow: 0 4px 6px rgba(0,0,0,0.3);
@@ -59,7 +59,7 @@
 </head>
 <body>
 
-  <div id="status-bar">Waiting for user...</div>
+  <div id="status-bar">Waiting for start...</div>
 
   <div id="welcome-screen">
       <h1>Red Bull Finder</h1>
@@ -101,8 +101,7 @@
         appSupabase = window.supabase.createClient(DB_URL, DB_KEY);
         loadFlavors();
         
-        // Initialize map but wait for startApp() to locate
-        appMap = L.map('map').setView([39.0, -94.5], 10); // Default to generic view
+        appMap = L.map('map').setView([39.0, -94.5], 10);
         L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png', {
             maxZoom: 19, attribution: '© OSM'
         }).addTo(appMap);
@@ -112,18 +111,18 @@
         document.getElementById('welcome-screen').style.display = 'none';
         document.getElementById('mainReportBtn').style.display = 'block';
         statusEl.innerText = "Requesting Location...";
-        appMap.locate({setView: true, maxZoom: 13}); // Zoom level 13 is better for wide search
+        appMap.locate({setView: true, maxZoom: 13});
     };
 
     setTimeout(() => {
         if(appMap) {
             appMap.on('locationfound', function(e) {
                 userPos = e.latlng;
-                statusEl.innerText = "Location Found. Scanning for stores...";
+                statusEl.innerText = "Location Found. Fetching stores...";
                 L.marker(e.latlng).addTo(appMap).bindPopup("You are here").openPopup();
                 
-                // Fetch Stores
-                fetchOSMStores(e.latitude, e.longitude);
+                // Fetch Stores (Safe Mode)
+                fetchOSMStoresSafe(e.latitude, e.longitude);
                 fetchSupabaseReports();
             });
 
@@ -134,54 +133,56 @@
         }
     }, 1000);
 
-    // --- NEW: WIDER SEARCH & BETTER QUERY ---
-    async function fetchOSMStores(lat, lng) {
-        statusEl.innerText = "Querying OpenStreetMap (10km radius)...";
+    // --- SAFETY MODE: NODES ONLY ---
+    async function fetchOSMStoresSafe(lat, lng) {
+        statusEl.innerText = "Querying OSM (Nodes only)...";
         
-        // nwr = Node, Way, Relation (Finds buildings too!)
-        // Added: Hy-Vee, Casey's, Dollar General
+        // We removed 'nwr' (shapes) and switched back to 'node' (points) to prevent crashes.
+        // Radius: 8km
         var query = `
             [out:json][timeout:25];
             (
-              nwr["name"~"7-Eleven|CVS|Walmart|QuikTrip|Walgreens|Target|Costco|Casey's|Hy-Vee|Dollar General", i]
-              (around:10000, ${lat}, ${lng});
+              node["name"~"7-Eleven|CVS|Walmart|QuikTrip|Walgreens|Target|Costco|Casey's|Hy-Vee|Dollar General", i]
+              (around:8000, ${lat}, ${lng});
             );
-            out center;
+            out body;
         `;
         
         var url = "https://overpass-api.de/api/interpreter?data=" + encodeURIComponent(query);
 
         try {
             var response = await fetch(url);
+            if (!response.ok) throw new Error("Server Busy");
+            
             var data = await response.json();
             
             if(data.elements && data.elements.length > 0) {
-                statusEl.innerText = "Found " + data.elements.length + " stores nearby.";
+                statusEl.innerText = "Found " + data.elements.length + " stores! Drawing...";
                 
                 data.elements.forEach(store => {
-                    // "center" is used for buildings (Ways), "lat/lon" for Points (Nodes)
-                    var sLat = store.lat || store.center.lat;
-                    var sLng = store.lon || store.center.lon;
-                    var sName = store.tags.name || "Store";
+                    // Safe Check: Ensure lat/lon exists
+                    if(store.lat && store.lon) {
+                        var sName = store.tags.name || "Store";
+                        
+                        var marker = L.circleMarker([store.lat, store.lon], {
+                            color: '#666', fillColor: '#bbb', fillOpacity: 0.5, radius: 6, weight: 1
+                        }).addTo(appMap);
 
-                    var marker = L.circleMarker([sLat, sLng], {
-                        color: '#666', fillColor: '#bbb', fillOpacity: 0.5, radius: 6, weight: 1
-                    }).addTo(appMap);
-
-                    marker.bindPopup(`
-                        <b>${sName}</b><br>
-                        <button onclick="reportFromPin('${sName.replace(/'/g, "\\'")}', ${sLat}, ${sLng})">
-                            Report Stock Here
-                        </button>
-                    `);
+                        marker.bindPopup(`
+                            <b>${sName}</b><br>
+                            <button onclick="reportFromPin('${sName.replace(/'/g, "\\'")}', ${store.lat}, ${store.lon})">
+                                Report Stock Here
+                            </button>
+                        `);
+                    }
                 });
+                statusEl.innerText = "Map Ready. " + data.elements.length + " stores loaded.";
             } else {
-                statusEl.innerText = "No stores found. Try moving the map?";
-                alert("No stores found within 10km. Try checking your area manually.");
+                statusEl.innerText = "No stores found nearby (8km radius).";
             }
         } catch (err) {
-            statusEl.innerText = "Error fetching stores: " + err.message;
-            console.error("OSM Error:", err);
+            statusEl.innerText = "Error: " + err.message;
+            console.error(err);
         }
     }
 

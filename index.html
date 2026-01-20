@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
-  <title>Red Bull Finder - Themed</title>
+  <title>Red Bull Finder - USA</title>
   
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.css" />
   <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.js"></script>
@@ -23,17 +23,46 @@
         height: 100%; margin: 0; padding: 0; 
         font-family: 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; 
         background-color: var(--rb-navy);
+        overflow: hidden; /* Prevent scrolling during animation */
     }
 
     #map { height: 100%; width: 100%; z-index: 1; }
 
-    /* SEARCH BAR */
+    /* --- SEARCH BAR ANIMATION --- */
     .search-container {
-      position: absolute; top: 20px; left: 50%; transform: translateX(-50%);
-      width: 90%; max-width: 450px; z-index: 2000; display: flex; gap: 8px;
-      background: rgba(6, 17, 42, 0.85); padding: 8px; border-radius: 60px;
-      backdrop-filter: blur(4px); border: 1px solid var(--rb-blue);
+      position: absolute; 
+      left: 50%; 
+      transform: translateX(-50%);
+      z-index: 2000; 
+      display: flex; gap: 8px;
+      background: rgba(6, 17, 42, 0.85); 
+      padding: 8px; 
+      border-radius: 60px;
+      backdrop-filter: blur(4px); 
+      border: 1px solid var(--rb-blue);
+      
+      /* TRANSITION SETTINGS */
+      transition: all 0.8s cubic-bezier(0.2, 0.8, 0.2, 1);
     }
+
+    /* STATE 1: LANDING (Center of Screen) */
+    .search-container.landing {
+        top: 40%;
+        transform: translate(-50%, -50%) scale(1.2);
+        width: 85%;
+        max-width: 500px;
+        box-shadow: 0 20px 50px rgba(0,0,0,0.6);
+        padding: 15px;
+    }
+
+    /* STATE 2: ACTIVE (Top of Screen) */
+    .search-container.active {
+        top: 20px;
+        width: 90%; 
+        max-width: 450px;
+        transform: translateX(-50%) scale(1);
+    }
+
     .search-input {
       flex: 1; padding: 12px 20px; font-size: 16px; border: none;
       border-radius: 50px; outline: none; background: #fff; color: #333;
@@ -41,7 +70,7 @@
     .search-btn {
       background: var(--rb-red); color: white; border: none; padding: 0 25px;
       border-radius: 50px; font-weight: 800; letter-spacing: 0.5px;
-      cursor: pointer; text-transform: uppercase;
+      cursor: pointer; text-transform: uppercase; white-space: nowrap;
     }
 
     /* STATUS PILL */
@@ -53,23 +82,16 @@
       box-shadow: 0 4px 15px rgba(0,0,0,0.5); text-transform: uppercase;
     }
 
-    /* POPUP STYLING (The List) */
+    /* POPUP STYLING */
     .leaflet-popup-content-wrapper { border-radius: 12px; padding: 0; overflow: hidden; }
     .leaflet-popup-content { margin: 0 !important; width: 280px !important; }
     
-    .popup-header {
-        background: var(--rb-navy); color: white; padding: 12px; text-align: center;
-    }
+    .popup-header { background: var(--rb-navy); color: white; padding: 12px; text-align: center; }
     .popup-header b { font-size: 16px; display: block; }
     .popup-header small { color: var(--rb-silver); font-size: 11px; }
 
-    .report-list { 
-        max-height: 180px; overflow-y: auto; background: white; 
-    }
-    .report-item { 
-        padding: 12px 15px; border-bottom: 1px solid #eee; font-size: 14px; 
-        display: flex; align-items: center; gap: 10px;
-    }
+    .report-list { max-height: 180px; overflow-y: auto; background: white; }
+    .report-item { padding: 12px 15px; border-bottom: 1px solid #eee; font-size: 14px; display: flex; align-items: center; gap: 10px; }
     .report-item:last-child { border-bottom: none; }
     
     .add-btn {
@@ -92,32 +114,30 @@
 
     /* --- MOBILE SPECIFIC TWEAKS --- */
     @media (max-width: 600px) {
-        /* Bigger Search Bar */
-        .search-container { width: 95%; top: 15px; padding: 6px; }
+        /* On mobile landing, keep it center but not TOO wide */
+        .search-container.landing { width: 90%; }
+        
         .search-input { font-size: 18px; padding: 14px; }
         .search-btn { padding: 0 20px; font-size: 14px; }
 
-        /* Bigger Popup Text */
         .leaflet-popup-content { width: 300px !important; }
         .popup-header b { font-size: 18px; }
         .report-item { font-size: 16px; padding: 15px; }
         .add-btn { padding: 16px; font-size: 15px; }
 
-        /* Bigger Modal Inputs */
         .modal { width: 95%; padding: 20px; }
         label { font-size: 14px; margin-bottom: 10px; }
-        input, select { padding: 16px; font-size: 18px; } /* Prevents zoom on tap */
+        input, select { padding: 16px; font-size: 18px; }
         .btn-submit { padding: 18px; font-size: 20px; }
         
-        /* Lower the zoom controls so they don't block the search bar */
         .leaflet-control-zoom { margin-bottom: 80px !important; }
     }
   </style>
 </head>
 <body>
 
-  <div class="search-container">
-    <input type="number" id="zipInput" class="search-input" placeholder="Zip Code (e.g. 66208)" inputmode="numeric">
+  <div id="searchBox" class="search-container landing">
+    <input type="number" id="zipInput" class="search-input" placeholder="Zip Code" inputmode="numeric">
     <button class="search-btn" onclick="handleZipSearch()">SEARCH</button>
   </div>
 
@@ -154,9 +174,6 @@
         "gas station", "convenience shop", "supermarket", "grocery"
     ];
 
-    // UPDATED ZOOM LEVEL: 14 (Closer for mobile)
-    var DEFAULT_ZOOM = 14; 
-
     var DB_URL = 'https://vwyvlyawbwfzwfyjojsc.supabase.co';
     var DB_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InZ3eXZseWF3YndmendmeWpvanNjIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Njg4NzI4MTIsImV4cCI6MjA4NDQ0ODgxMn0.I74HObejsbKGW3uy59iAw0W2crVMxuscuQOYSTdbbBA';
 
@@ -164,22 +181,27 @@
         appSupabase = window.supabase.createClient(DB_URL, DB_KEY);
         loadFlavors();
         
-        // Use CartoDB Light (Voyager) but we will start zoomed in
-        appMap = L.map('map', { zoomControl: false }).setView([39.05, -94.60], DEFAULT_ZOOM);
+        // START VIEW: USA (Zoom 4)
+        appMap = L.map('map', { zoomControl: false }).setView([37.8, -96], 4);
         
         L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png', { 
             maxZoom: 19, attribution: '© OSM' 
         }).addTo(appMap);
         
         L.control.zoom({ position: 'bottomleft' }).addTo(appMap);
-
-        scanArea(39.05, -94.60);
-        fetchSupabaseReports();
+        
+        // NOTE: We do NOT scan on load anymore. We wait for user search.
     };
 
     async function handleZipSearch() {
         var zip = document.getElementById('zipInput').value;
         if(zip.length < 5) return alert("Enter 5-digit zip.");
+
+        // 1. Trigger Animation (Center -> Top)
+        var box = document.getElementById('searchBox');
+        box.classList.remove('landing');
+        box.classList.add('active');
+
         setStatus("Locating...");
         try {
             var url = `https://nominatim.openstreetmap.org/search?postalcode=${zip}&country=USA&format=json`;
@@ -188,10 +210,17 @@
             if(data && data.length > 0) {
                 var lat = parseFloat(data[0].lat);
                 var lon = parseFloat(data[0].lon);
-                // Fly to Zoom 15 (Very Close)
-                appMap.flyTo([lat, lon], 15, { duration: 1.5 });
+                
+                // 2. Fly to Location
+                appMap.flyTo([lat, lon], 14, { duration: 1.5 });
+                
+                // 3. Scan after arrival
                 setTimeout(() => { scanArea(lat, lon); }, 1600);
-            } else { alert("Zip not found!"); }
+            } else { 
+                alert("Zip not found!"); 
+                // Reset animation if failed (optional, but good UX)
+                // box.classList.add('landing'); box.classList.remove('active');
+            }
         } catch(e) { console.error(e); alert("Search failed."); }
     }
 
@@ -202,6 +231,9 @@
         for (let term of SEARCH_TERMS) { await fetchPhoton(term, lat, lng); }
         if(storesFoundCount === 0) setStatus("No stores found.");
         else setStatus("Found " + storesFoundCount + " stores.");
+        
+        // Always fetch reports when scanning a new area
+        fetchSupabaseReports();
     }
 
     async function fetchPhoton(term, lat, lng) {
@@ -223,7 +255,6 @@
                         color: '#666', fillColor: '#ddd', fillOpacity: 0.8, radius: 7, weight: 1
                     }).addTo(appMap);
 
-                    // THEMED POPUP BUTTON
                     marker.bindPopup(`
                         <div style="text-align:center; padding:10px;">
                             <b style="font-size:16px; color:#1f305e">${sName}</b><br>
